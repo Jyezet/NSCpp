@@ -1,8 +1,12 @@
 #pragma once
-#include <curl/curl.h>
-#include <tinyxml2.cpp>
+#include "curl/curl.h"
+#include "tinyxml2.cpp"
 #include <iostream>
 #include <algorithm>
+#include <thread>
+#include <map>
+#include <chrono>
+#include <cstring>
 
 namespace errorManagement {
 	void _throw_err(std::string error, std::string file, int line) {
@@ -27,8 +31,13 @@ namespace NSCpp {
 		std::string _ua;
 
 		static size_t _writeResponse(void* contents, size_t size, size_t nmemb, void* userp) {
-			((std::string*)userp)->append((char*) contents, size * nmemb);
+			((std::string*)userp)->append((char*)contents, size * nmemb);
 			return size * nmemb;
+		}
+
+		std::string _upper(std::string str) {
+			transform(str.begin(), str.end(), str.begin(), ::toupper);
+			return str;
 		}
 
 		std::string _request(std::string url) {
@@ -36,22 +45,42 @@ namespace NSCpp {
 			CURLcode response;
 			std::string respContent;
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
-			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+			curl_slist* requestHeader = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
 			curl_global_init(CURL_GLOBAL_ALL);
 			curl = curl_easy_init();
 			if (!curl) {
 				throw_err("Error: Couldn't initialize CURL.");
 			}
-			curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
-			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, this->_writeResponse);
-			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respContent);
-			response = curl_easy_perform(curl);
+			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
+			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
+			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false); // Disable SSL cert checking (Probably shouldn't do this but idk)
+			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, requestHeader); // Add request headers (User-Agent)
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, this->_writeResponse); // Parse request body using this function
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respContent); // Write parsed request body into this string variable
+			response = curl_easy_perform(curl); // Send request
 			if (response != CURLE_OK) {
 				throw_err(curl_easy_strerror(response));
 			}
-			curl_slist_free_all(headers);
+
+			curl_header* ratelimit_remaining_header;
+			curl_header* ratelimit_reset_header;
+			int ratelimit_remaining;
+			int ratelimit_reset;
+
+			// IMPORTANT NOTE FOR THE FUTURE:
+			// For some reason only the Gods of C++ understand, 
+			// curl_easy_header overwrites all header instances with the last retrieved value
+			// That's why I save the value before it's lost
+
+			curl_easy_header(curl, "Ratelimit-Remaining", 0, CURLH_HEADER, -1, &ratelimit_remaining_header);
+			ratelimit_remaining = atoi(ratelimit_remaining_header->value);
+			curl_easy_header(curl, "Ratelimit-Reset", 0, CURLH_HEADER, -1, &ratelimit_reset_header);
+			ratelimit_reset = atoi(ratelimit_reset_header->value);
+
+			// Ratelimit control
+			float wait_time_seconds = (float)ratelimit_reset / ratelimit_remaining;
+			std::this_thread::sleep_for(std::chrono::milliseconds((int)wait_time_seconds * 1000));
+
 			curl_easy_cleanup(curl);
 			curl_global_cleanup();
 			return respContent;
@@ -59,7 +88,7 @@ namespace NSCpp {
 
 		std::string _buildAPIRequestURI(std::string type, std::string shard, std::string target) {
 			std::string uri;
-			if (type == APIType::WORLD) {
+			if (type == "world") {
 				uri = "?q=" + shard;
 			}
 			else {
@@ -67,11 +96,6 @@ namespace NSCpp {
 			}
 
 			return uri;
-		}
-
-		std::string _upper(std::string str) {
-			transform(str.begin(), str.end(), str.begin(), ::toupper);
-			return str;
 		}
 
 		std::string _parseXML(std::string response, std::string type, std::string shard) {
@@ -110,11 +134,11 @@ namespace NSCpp {
 		}
 
 		Shard APIRequest(std::string type, std::string shard, std::string target = "") {
-			if (type != APIType::WORLD && type != APIType::REGION && type != APIType::NATION) {
+			if (type != "world" && type != "region" && type != "nation") {
 				throw_err("Request type must be world, region or nation (WA not supported yet).");
 			}
 
-			if (type != APIType::WORLD && target.empty()) {
+			if (type != "world" && target.empty()) {
 				throw_err("If request type is not world, target must be provided.");
 			}
 
