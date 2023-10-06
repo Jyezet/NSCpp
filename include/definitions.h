@@ -39,9 +39,13 @@ enum class DispatchSubcategory {
 
 // Why not
 namespace APIType {
-	std::string WORLD = "world", NATION = "nation", REGION = "region";
+	std::string WORLD = "world";
+	std::string NATION = "nation";
+	std::string REGION = "region";
 }
 
 namespace DispatchAction {
-	std::string ADD = "add", EDIT = "edit", REMOVE = "remove";
+	std::string ADD = "add";
+	std::string EDIT = "edit";
+	std::string REMOVE = "remove";
 }
