@@ -12,7 +12,7 @@ enum class DispatchSubcategory {
 	Overview = 100,
 	History = 101,
 	Geography = 102,
-	Culture = 103,
+	FactCulture = 103,
 	Politics = 104,
 	Legislation = 105,
 	Religion = 106,
@@ -31,21 +31,8 @@ enum class DispatchSubcategory {
 	Drama = 535,
 	Diplomacy = 545,
 	Science = 555,
-	Culture = 565,
+	AccCulture = 565,
 	Other = 595,
 	Gameplay = 835,
 	Reference = 845
 };
-
-// Why not
-namespace APIType {
-	std::string WORLD = "world";
-	std::string NATION = "nation";
-	std::string REGION = "region";
-}
-
-namespace DispatchAction {
-	std::string ADD = "add";
-	std::string EDIT = "edit";
-	std::string REMOVE = "remove";
-}
