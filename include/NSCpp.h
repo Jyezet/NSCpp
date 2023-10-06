@@ -1,5 +1,6 @@
 #pragma once
 #include "curl/curl.h"
+#include "definitions.h"
 #include "tinyxml2.cpp"
 #include <iostream>
 #include <algorithm>
@@ -19,13 +20,10 @@ namespace errorManagement {
 #define throw_err(error) errorManagement::_throw_err(error, __FILE__, __LINE__)
 #endif
 
-
-namespace APIType {
-	std::string WORLD = "world", NATION = "nation", REGION = "region";
-}
-
 namespace NSCpp {
 	typedef struct { std::string target; std::string shard; std::string response; } Shard;
+	typedef struct { int status; std::string link; } DispatchInfo;
+	typedef struct { std::string nation; std::string password; } AuthCredentials;
 	class API {
 	private:
 		std::string _ua;
@@ -40,7 +38,29 @@ namespace NSCpp {
 			return str;
 		}
 
-		std::string _request(std::string url) {
+		void _wait_for_ratelimit(CURL* curl) {
+			curl_header* ratelimit_remaining_header;
+			curl_header* ratelimit_reset_header;
+			int ratelimit_remaining;
+			int ratelimit_reset;
+
+			// IMPORTANT NOTE FOR THE FUTURE:
+			// For some reason only the Gods of C++ understand, 
+			// curl_easy_header overwrites all header instances with the last retrieved value
+			// That's why I save the value before it's lost
+
+			// Get header info
+			curl_easy_header(curl, "Ratelimit-Remaining", 0, CURLH_HEADER, -1, &ratelimit_remaining_header);
+			ratelimit_remaining = atoi(ratelimit_remaining_header->value);
+			curl_easy_header(curl, "Ratelimit-Reset", 0, CURLH_HEADER, -1, &ratelimit_reset_header);
+			ratelimit_reset = atoi(ratelimit_reset_header->value);
+
+			// Ratelimit control
+			float wait_time_seconds = (float)ratelimit_reset / ratelimit_remaining;
+			std::this_thread::sleep_for(std::chrono::milliseconds((int)wait_time_seconds * 1000));
+		}
+
+		std::string _httpget(std::string url, bool control_ratelimit = true) {
 			CURL* curl;
 			CURLcode response;
 			std::string respContent;
@@ -62,24 +82,13 @@ namespace NSCpp {
 				throw_err(curl_easy_strerror(response));
 			}
 
-			curl_header* ratelimit_remaining_header;
-			curl_header* ratelimit_reset_header;
-			int ratelimit_remaining;
-			int ratelimit_reset;
+			if (!control_ratelimit) {
+				curl_easy_cleanup(curl);
+				curl_global_cleanup();
+				return respContent;
+			}
 
-			// IMPORTANT NOTE FOR THE FUTURE:
-			// For some reason only the Gods of C++ understand, 
-			// curl_easy_header overwrites all header instances with the last retrieved value
-			// That's why I save the value before it's lost
-
-			curl_easy_header(curl, "Ratelimit-Remaining", 0, CURLH_HEADER, -1, &ratelimit_remaining_header);
-			ratelimit_remaining = atoi(ratelimit_remaining_header->value);
-			curl_easy_header(curl, "Ratelimit-Reset", 0, CURLH_HEADER, -1, &ratelimit_reset_header);
-			ratelimit_reset = atoi(ratelimit_reset_header->value);
-
-			// Ratelimit control
-			float wait_time_seconds = (float)ratelimit_reset / ratelimit_remaining;
-			std::this_thread::sleep_for(std::chrono::milliseconds((int)wait_time_seconds * 1000));
+			this->_wait_for_ratelimit(curl);
 
 			curl_easy_cleanup(curl);
 			curl_global_cleanup();
@@ -107,6 +116,12 @@ namespace NSCpp {
 
 	public:
 		API() { ; } // Empty object as result of default constructor :D
+
+		// Doing std::cout << APIObject displays user agent
+		friend std::ostream& operator<<(std::ostream& out, API obj) {
+			out << obj._ua;
+			return out;
+		}
 
 		API(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser) {
 			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) {
@@ -148,7 +163,7 @@ namespace NSCpp {
 
 			std::string uri = this->_buildAPIRequestURI(type, shard, target);
 			std::string url = "https://www.nationstates.net/cgi-bin/api.cgi" + uri;
-			std::string response = this->_request(url);
+			std::string response = this->_httpget(url);
 
 			Shard data;
 			data.shard = shard;
@@ -156,6 +171,12 @@ namespace NSCpp {
 			data.response = this->_parseXML(response, type, shard);
 
 			return data;
+		}
+
+		DispatchInfo APIDispatch(AuthCredentials credentials, DispatchCategory category, DispatchSubcategory subcategory, int dispatchID = 0, std::string title = "", std::string text = "", std::string action = "add") {
+			if (action != DispatchAction::ADD && action != DispatchAction::EDIT && action != DispatchAction::REMOVE) {
+				throw_err("Dispatch action must be add, edit or remove.");
+			}			
 		}
 	};
 }
