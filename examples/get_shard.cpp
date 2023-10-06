@@ -8,7 +8,7 @@ int main() {
 	NSCpp::API api("Explanation of what your script does", "Nation belonging to the script's author", "Nation belonging to the script's user");
 
   // Request population shard from the nation named testnation, returns a struct containing requested shard, request type and API response
-	NSCpp::Shard response = api.APIRequest(APIType::NATION, "population", "testnation");
+	NSCpp::Shard response = api.APIRequest("nation", "population", "testnation");
 
   // Print the API response
 	cout << response.response;
