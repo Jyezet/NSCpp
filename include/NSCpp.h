@@ -214,7 +214,7 @@ namespace NSCpp {
 				Mapvec mapvec;
 				for (tinyxml2::XMLElement* badge = root->FirstChildElement("WABADGE"); badge != NULL; badge = badge->NextSiblingElement("WABADGE")) {
 					std::map<std::string, std::string> tempMap;
-					tempMap["TYPE"] = "undefined";
+					tempMap["TYPE"] = badge->Attribute("type");
 					tempMap["RESOLUTION"] = badge->GetText();
 					mapvec.push_back(tempMap);
 				}
@@ -295,6 +295,15 @@ namespace NSCpp {
 				strmap["SURVIVORS"] = root->FirstChildElement("SURVIVORS")->GetText();
 				strmap["ZOMBIES"] = root->FirstChildElement("ZOMBIES")->GetText();
 				strmap["DEAD"] = root->FirstChildElement("DEAD")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "DEATHS") {
+				Strmap strmap;
+				for (auto cause = root->FirstChildElement("CAUSE"); cause != NULL; cause = cause->NextSiblingElement("CAUSE")) {
+					strmap[cause->Attribute("type")] = cause->GetText();
+				}
 				resp.respMap = strmap;
 				return resp;
 			}
