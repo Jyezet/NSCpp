@@ -16,13 +16,25 @@ int main() {
 	// Request happenings shard from world
 	NSCpp::Shard response2 = api.APIRequest("world", "happenings");
 
-	// Some shards like happenings return multiple entries of data, in that case, a vector of maps will be returned through the responseSpecial field
+	// Some shards like happenings return multiple, named entries of data, in that case, a vector of maps will be returned through the responseSpecialMap field
 	// NSCpp::Mapvec is short-hand for std::vector<std::map<std::string, std::string>>
-	NSCpp::Mapvec vectorOfMaps = response2.responseSpecial;
+	NSCpp::Mapvec vectorOfMaps = response2.responseSpecialMap;
 
 	// Iterate over the vector and print data
 	for(map<string, string> currentEvent : vectorOfMaps){
 		cout << "Text: " << currentEvent["TEXT"] << "\nTimestamp: " << currentEvent["TIMESTAMP"] << "\n\n";
+	}
+
+	// Request banners shard from a nation named testnation2
+	NSCpp::Shard response3 = api.APIRequest("nation", "banners", "testnation2")
+	
+	// Some shards like banners return multiple, unnamed entries of data, in that case, a vector of strings will be returned through the responseSpecialVec field
+	// NSCpp::Strvec is short-hand for std::vector<std::string>
+	NSCpp::Strvec vectorOfStrings = response3.responseSpecialVec;
+
+	// Iterate over the vector and print data
+	for(auto i : vectorOfStrings){
+		cout << i << "\n";
 	}
 	return 0;
 }
