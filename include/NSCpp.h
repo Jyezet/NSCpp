@@ -14,11 +14,18 @@
 namespace errorManagement {
 	bool disableWarnings = false;
 
+	// Errors are critical, and most commonly the fault of the author/user. They cause the closing of the program.
 	void _throw_err(std::string error, std::string file, int line) {
 		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << error;
-		exit(-1);
+		exit(1);
 	}
 
+	// Exceptions are not the fault of the author/user, but of NS API. For stability matters, they don't close the program.
+	void _throw_exc(std::string except, std::string file, int line) {
+		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << except;
+	}
+
+	// Warnings can be disabled setting the errorManagement::disableWarnings variable to true.
 	void _throw_warn(std::string warning, std::string file, int line) {
 		if (disableWarnings) {
 			return;
@@ -30,9 +37,11 @@ namespace errorManagement {
 #ifndef throw_err
 #define throw_err(error) errorManagement::_throw_err(error, __FILE__, __LINE__)
 #endif
-
 #ifndef throw_warn
 #define throw_warn(warning) errorManagement::_throw_warn(warning, __FILE__, __LINE__)
+#endif
+#ifndef throw_exc
+#define throw_exc(except) errorManagement::_throw_exc(except, __FILE__, __LINE__)
 #endif
 
 namespace NSCpp {
@@ -57,6 +66,11 @@ namespace NSCpp {
 			return str;
 		}
 
+		std::string _lower(std::string str) {
+			transform(str.begin(), str.end(), str.begin(), ::tolower);
+			return str;
+		}
+
 		void _waitForRatelimit(CURL* curl) {
 			curl_header* ratelimitRemainingHeader;
 			curl_header* ratelimitResetHeader;
@@ -76,7 +90,7 @@ namespace NSCpp {
 
 			// Ratelimit control
 			float waitTimeSeconds = (float)ratelimitReset / ratelimitRemaining;
-			std::this_thread::sleep_for(std::chrono::milliseconds((int)waitTimeSeconds * 1000));
+			std::this_thread::sleep_for(std::chrono::milliseconds((int) waitTimeSeconds * 1000));
 		}
 
 		std::string _httpget(std::string url, Strvec paramNames, Strvec paramValues, curl_slist* headers, bool controlRatelimit = true) {
@@ -95,7 +109,12 @@ namespace NSCpp {
 
 			// All this just to escape URL parameters correctly T_T
 			for (int i = 0; i < paramNames.size(); i++) {
-				url += paramNames[i] + curl_easy_escape(curl, paramValues[i].c_str(), 0);
+				std::string currValue = curl_easy_escape(curl, paramValues[i].c_str(), 0);
+				if (paramNames[i] == "&q=" || paramNames[i] == "?q=") {
+					// Turn all shards to lowercase, as *SOME* API shards are case sensitive (like dossier)
+					currValue = this->_lower(currValue);
+				}
+				url += paramNames[i] + currValue;
 			}
 
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
@@ -139,6 +158,12 @@ namespace NSCpp {
 			}
 
 			std::string respPrepare = this->_httpget(url, paramNames, paramValues, headersPrepare);
+
+			if (respPrepare.find("error") != std::string::npos) {
+				throw_exc("Nationstates API has thrown an unknown error.");
+				return;
+			}
+
 			tinyxml2::XMLDocument document;
 			document.Parse(respPrepare.c_str());
 			const char* rawToken = document.FirstChildElement("NATION")->FirstChildElement("SUCCESS")->GetText();
@@ -152,6 +177,9 @@ namespace NSCpp {
 			paramValues.push_back(token);
 
 			std::string respExecute = this->_httpget(url, paramNames, paramValues, headersExecute);
+			if (respExecute.find("error") != std::string::npos) {
+				throw_exc("Nationstates API has thrown an unknown error.");
+			}
 		}
 
 		std::vector<Strvec> _buildAPIRequestURI(std::string type, std::string shard, std::string target) {
@@ -337,8 +365,18 @@ namespace NSCpp {
 
 			if (shard == "DOSSIER") {
 				Strvec strvec;
-				for (tinyxml2::XMLElement* nation = root->FirstChildElement("NATION"); nation != NULL; nation = nation->NextSiblingElement("NATION")) {
-					strvec.push_back(nation->GetText());
+				for (auto nation = root->FirstChildElement("NATION"); nation != NULL; nation = nation->NextSiblingElement("NATION")) {
+					std::string nationName = nation->GetText();
+					strvec.push_back(nationName);
+				}
+				resp.respVec = strvec;
+				return resp;
+			}
+
+			if (shard == "RDOSSIER") {
+				Strvec strvec;
+				for (auto region = root->FirstChildElement("REGION"); region != NULL; region = region->NextSiblingElement("REGION")) {
+					strvec.push_back(region->GetText());
 				}
 				resp.respVec = strvec;
 				return resp;
@@ -452,6 +490,11 @@ namespace NSCpp {
 			std::string response = this->_httpget(url, uri[0], uri[1], headers);
 
 			Shard data;
+			if (response.find("error") != std::string::npos) {
+				throw_exc("Nationstates API has thrown an unknown error.");
+				return data;
+			}
+
 			data.shard = shard;
 			data.target = target;
 
@@ -460,7 +503,7 @@ namespace NSCpp {
 				return data;
 			}
 
-			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER") {
+			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER") {
 				data.respVec = this->_parseXML(response, upperType, upperShard).respVec;
 				return data;
 			}
