@@ -135,7 +135,6 @@ namespace NSCpp {
 			paramValues.push_back(token);
 
 			std::string respExecute = this->_httpget(url, paramNames, paramValues, headersExecute);
-			std::cout << respExecute;
 		}
 
 		std::vector<strvec> _buildAPIRequestURI(std::string type, std::string shard, std::string target) {
