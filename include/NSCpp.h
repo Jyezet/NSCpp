@@ -234,6 +234,20 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "POLICIES") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* policy = root->FirstChildElement("POLICY"); policy != NULL; policy = policy->NextSiblingElement("POLICY")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["NAME"] = policy->FirstChildElement("NAME")->GetText();
+					tempMap["PIC"] = policy->FirstChildElement("PIC")->GetText();
+					tempMap["CAT"] = policy->FirstChildElement("CAT")->GetText();
+					tempMap["DESC"] = policy->FirstChildElement("DESC")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
 			if (shard == "UNREAD") {
 				Strmap strmap;
 				strmap["ISSUES"] = root->FirstChildElement("ISSUES")->GetText();
@@ -242,6 +256,16 @@ namespace NSCpp {
 				strmap["RMB"] = root->FirstChildElement("RMB")->GetText();
 				strmap["WA"] = root->FirstChildElement("WA")->GetText();
 				strmap["NEWS"] = root->FirstChildElement("NEWS")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "SECTORS") {
+				Strmap strmap;
+				strmap["BLACKMARKET"] = root->FirstChildElement("BLACKMARKET")->GetText();
+				strmap["GOVERNMENT"] = root->FirstChildElement("GOVERNMENT")->GetText();
+				strmap["INDUSTRY"] = root->FirstChildElement("INDUSTRY")->GetText();
+				strmap["PUBLIC"] = root->FirstChildElement("PUBLIC")->GetText();
 				resp.respMap = strmap;
 				return resp;
 			}
@@ -349,11 +373,20 @@ namespace NSCpp {
 				return resp;
 			}
 
-			if (shard == "BANNERS" || shard == "ADMIRABLES") {
+			if (shard == "BANNERS" || shard == "ADMIRABLES" || shard == "NOTABLES") {
 				Strvec strvec;
 				std::string elementName = shard.substr(0, shard.size() - 1);
-				for (tinyxml2::XMLElement* banner = root->FirstChildElement(elementName.c_str()); banner != NULL; banner = banner->NextSiblingElement(elementName.c_str())) {
-					strvec.push_back(banner->GetText());
+				for (tinyxml2::XMLElement* node = root->FirstChildElement(elementName.c_str()); node != NULL; node = node->NextSiblingElement(elementName.c_str())) {
+					strvec.push_back(node->GetText());
+				}
+				resp.respVec = strvec;
+				return resp;
+			}
+
+			if (shard == "LEGISLATION") {
+				Strvec strvec;
+				for (tinyxml2::XMLElement* law = root->FirstChildElement("LAW"); law != NULL; law = law->NextSiblingElement("LAW")) {
+					strvec.push_back(law->GetText());
 				}
 				resp.respVec = strvec;
 				return resp;
@@ -572,17 +605,17 @@ namespace NSCpp {
  			data.shard = shard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS") {
+			if (upperShard == "HAPPENINGS" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS" || upperShard == "POLICIES") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
 
-			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER") {
+			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER" || upperShard == "NOTABLES" || upperShard == "LEGISLATION") {
 				data.respVec = this->_parseXML(response, upperType, upperShard).respVec;
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD") {
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD" || upperShard == "SECTORS") {
 				data.respMap = this->_parseXML(response, upperType, upperShard).respMap;
 				return data;
 			}
