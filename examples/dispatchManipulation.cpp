@@ -1,3 +1,4 @@
+// If you find an error in this example, contact me through discord (Username: jyezet)
 #include <NSCpp.h>
 #include <iostream>
 
