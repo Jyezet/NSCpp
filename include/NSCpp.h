@@ -151,6 +151,11 @@ namespace NSCpp {
 			return respContent;
 		}
 
+		template <typename T>
+		bool _elementInArr(T arr[], T element) {
+			return std::distance(arr, std::find(std::begin(arr), std::end(arr), element)) == sizeof(arr) / sizeof(*arr);
+		}
+
 		void _APICommand(AuthCredentials credentials, std::string command, Strvec dataNames, Strvec dataValues) {
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			std::string requestXPassword = "X-Password: " + credentials.password;
@@ -158,6 +163,11 @@ namespace NSCpp {
 			headersPrepare = curl_slist_append(headersPrepare, requestXPassword.c_str());
 			std::string url = "https://www.nationstates.net/cgi-bin/api.cgi";
 			
+			if (!this->_xpin.empty()) {
+				std::string requestXPin = "X-Pin: " + this->_xpin;
+				headersPrepare = curl_slist_append(headersPrepare, requestXPin.c_str());
+			}
+
 			Strvec paramNames = { "?nation=", "&c=", "&mode=" };
 			Strvec paramValues = { credentials.nation, command, "prepare" };
 
@@ -370,7 +380,7 @@ namespace NSCpp {
 					// This absolute mess of a code is the result of NS API deciding to omit certain entries on some response bits but not on others. To avoid exceptions, I check if the pointer to that entry is not NULL.
 					// But it gets worse, if a node exists but it's empty, the XML parser will not return a null pointer to it but the string it contains will be null, that's why I'm running a double check on every statement
 					// Now you know who to thank for these beautiful features /s
-					if (notice->FirstChildElement("NEW")       != NULL && notice->FirstChildElement("NEW")->GetText()       != NULL)       tempMap["NEW"]       = notice->FirstChildElement("NEW")->GetText();
+					if (notice->FirstChildElement("NEW")       != NULL && notice->FirstChildElement("NEW")->GetText()       != NULL)       tempMap["NEW"] = notice->FirstChildElement("NEW")->GetText();
 					if (notice->FirstChildElement("OK")        != NULL && notice->FirstChildElement("OK")->GetText()        != NULL)       tempMap["OK"]        = notice->FirstChildElement("OK")->GetText();
 					if (notice->FirstChildElement("TEXT")      != NULL && notice->FirstChildElement("TEXT")->GetText()      != NULL)       tempMap["TEXT"]      = notice->FirstChildElement("TEXT")->GetText();
 					if (notice->FirstChildElement("TIMESTAMP") != NULL && notice->FirstChildElement("TIMESTAMP")->GetText() != NULL)       tempMap["TIMESTAMP"] = notice->FirstChildElement("TIMESTAMP")->GetText();
@@ -634,7 +644,62 @@ namespace NSCpp {
 			this->_ua = useragent;
 		}
 
-		Shard APIRequest(std::string type, std::string shard, std::string target = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}, std::string password = "") {
+		Shard privateAPIRequest(AuthCredentials credentials, std::string shard, Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
+			std::string upperShard = this->_upper(shard);
+			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
+			if (!isPrivateShard) {
+				throw_err("You should you APIRequest for public shard requests, or make sure you've entered the shard's name correctly.");
+			}
+
+			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") {
+				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
+			}
+
+			std::vector<Strvec> uri = this->_buildAPIRequestURI("nation", upperShard, credentials.nation);
+			std::string url = "https://www.nationstates.net/cgi-bin/api.cgi";
+
+			std::string requestUserAgent = "User-Agent: " + this->_ua;
+			std::string XPassword = "X-Password: " + credentials.password;
+
+			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+			headers = curl_slist_append(headers, XPassword.c_str());
+
+
+			for (auto name : extraInfoNames) {
+				uri[0].push_back("&" + name + "=");
+			}
+
+			for (auto value : extraInfoValues) {
+				uri[1].push_back(value);
+			}
+
+			std::string response = this->_httpget(url, uri[0], uri[1], headers);
+
+			Shard data;
+			if (response.find("error") != std::string::npos) {
+				throw_exc("Nationstates API has thrown an unknown error.");
+				return data;
+			}
+			data.shard = upperShard;
+			data.target = credentials.nation;
+
+			if (upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES") {
+				data.respMapVec = this->_parseXML(response, "NATION", upperShard).respMapVec;
+				return data;
+			}
+
+			if (upperShard == "DOSSIER" || upperShard == "RDOSSIER") {
+				data.respVec = this->_parseXML(response, "NATION", upperShard).respVec;
+				return data;
+			}
+
+			if (upperShard == "UNREAD") {
+				data.respMap = this->_parseXML(response, "NATION", upperShard).respMap;
+				return data;
+			}
+		}
+
+		Shard APIRequest(std::string type, std::string shard, std::string target = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
@@ -651,7 +716,7 @@ namespace NSCpp {
 			}
 
 			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") {
-				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
+				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
 			}
 
 			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS" && upperShard != "CENSUSRANKS") {
@@ -681,12 +746,8 @@ namespace NSCpp {
 
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
 
-			if (upperType == "NATION" && isPrivateShard && password.empty()) {
-				throw_err("Target's password must be provided to access private shard '" + upperShard + "'.");
-			}
-
-			if (!isPrivateShard && !password.empty()) {
-				throw_warn("The 'password' argument is unnecessary unless the shard is private.");
+			if (isPrivateShard) {
+				throw_err("You should you privateAPIRequest to request the " + upperShard + " private shard.");
 			}
 
 			std::vector<Strvec> uri = this->_buildAPIRequestURI(type, upperShard, target);
@@ -694,11 +755,6 @@ namespace NSCpp {
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
 			
-			if (isPrivateShard) {
-				std::string XPassword = "X-Password: " + password;
-				headers = curl_slist_append(headers, XPassword.c_str());
-			}
-
 			for (auto name : extraInfoNames) {
 				uri[0].push_back("&" + name + "=");
 			}
@@ -714,20 +770,20 @@ namespace NSCpp {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return data;
 			}
- 			data.shard = shard;
+ 			data.shard = upperShard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS") {
+			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
 
-			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER" || upperShard == "NOTABLES" || upperShard == "LEGISLATION" || upperShard == "EMBASSIES") {
+			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "NOTABLES" || upperShard == "LEGISLATION" || upperShard == "EMBASSIES") {
 				data.respVec = this->_parseXML(response, upperType, upperShard).respVec;
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL") {
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL") {
 				parsedXML xml = this->_parseXML(response, upperType, upperShard);
 				data.respMap = xml.respMap;
 				if (upperShard == "POLL") data.optionsPtr = xml.optionsPtr;
