@@ -52,6 +52,15 @@ namespace NSCpp {
 	typedef struct { std::string nation; std::string password; } AuthCredentials;
 	typedef struct { AuthCredentials credentials; DispatchCategory category; DispatchSubcategory subcategory; std::string title; std::string text; } DispatchInfo;
 	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; } parsedXML;
+	
+	std::string joinTogether(Strvec strvec) {
+		std::string returnData;
+		for (auto i : strvec) {
+			returnData += i + "+";
+		}
+		return returnData;
+	}
+	
 	class API {
 	private:
 		std::string _ua; std::string _xpin = "";
@@ -116,6 +125,7 @@ namespace NSCpp {
 				}
 				url += paramNames[i] + currValue;
 			}
+
 
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
 			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
@@ -220,6 +230,44 @@ namespace NSCpp {
 					std::map<std::string, std::string> tempMap;
 					tempMap["TIMESTAMP"] = _event->FirstChildElement("TIMESTAMP")->GetText();
 					tempMap["TEXT"] = _event->FirstChildElement("TEXT")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "CENSUS") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* scale = root->FirstChildElement("SCALE"); scale != NULL; scale = scale->NextSiblingElement("SCALE")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["ID"] = scale->Attribute("id");
+					tempMap["SCORE"] = scale->FirstChildElement("SCORE")->GetText();
+					tempMap["RANK"] = scale->FirstChildElement("RANK")->GetText();
+					tempMap["RRANK"] = scale->FirstChildElement("RRANK")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "NOTICES") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* notice = root->FirstChildElement("NOTICE"); notice != NULL; notice = notice->NextSiblingElement("NOTICE")) {
+					std::map<std::string, std::string> tempMap;
+
+					// This absolute mess of a code is the result of NS API deciding to omit certain entries on some response bits but not on others. To avoid exceptions, I check if the pointer to that entry is not NULL.
+					// But it gets worse, if a node exists but it's empty, the XML parser will not return a null pointer to it but the string it contains will be null, that's why I'm running a double check on every statement
+					// Now you know who to thank for these beautiful features /s
+					if (notice->FirstChildElement("NEW")       != NULL && notice->FirstChildElement("NEW")->GetText()       != NULL)       tempMap["NEW"]       = notice->FirstChildElement("NEW")->GetText();
+					if (notice->FirstChildElement("OK")        != NULL && notice->FirstChildElement("OK")->GetText()        != NULL)       tempMap["OK"]        = notice->FirstChildElement("OK")->GetText();
+					if (notice->FirstChildElement("TEXT")      != NULL && notice->FirstChildElement("TEXT")->GetText()      != NULL)       tempMap["TEXT"]      = notice->FirstChildElement("TEXT")->GetText();
+					if (notice->FirstChildElement("TIMESTAMP") != NULL && notice->FirstChildElement("TIMESTAMP")->GetText() != NULL)       tempMap["TIMESTAMP"] = notice->FirstChildElement("TIMESTAMP")->GetText();
+					if (notice->FirstChildElement("TITLE")     != NULL && notice->FirstChildElement("TITLE")->GetText()     != NULL)       tempMap["TITLE"]     = notice->FirstChildElement("TITLE")->GetText();
+					if (notice->FirstChildElement("TYPE")      != NULL && notice->FirstChildElement("TYPE")->GetText()      != NULL)       tempMap["TYPE"]      = notice->FirstChildElement("TYPE")->GetText();
+					if (notice->FirstChildElement("TYPE_ICON") != NULL && notice->FirstChildElement("TYPE_ICON")->GetText() != NULL)       tempMap["TYPE_ICON"] = notice->FirstChildElement("TYPE_ICON")->GetText();
+					if (notice->FirstChildElement("URL")       != NULL && notice->FirstChildElement("URL")->GetText()       != NULL)       tempMap["URL"]       = notice->FirstChildElement("URL")->GetText();
+					if (notice->FirstChildElement("WHO")       != NULL && notice->FirstChildElement("WHO")->GetText()       != NULL)       tempMap["WHO"]       = notice->FirstChildElement("WHO")->GetText();
+					if (notice->FirstChildElement("WHO_URL")   != NULL && notice->FirstChildElement("WHO_URL")->GetText()   != NULL)       tempMap["WHO_URL"]   = notice->FirstChildElement("WHO_URL")->GetText();
 					mapvec.push_back(tempMap);
 				}
 				resp.respMapVec = mapvec;
@@ -435,7 +483,7 @@ namespace NSCpp {
 			this->_ua = useragent;
 		}
 
-		Shard APIRequest(std::string type, std::string shard, std::string target = "", std::string password = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
+		Shard APIRequest(std::string type, std::string shard, std::string target = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}, std::string password = "") {
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
@@ -455,8 +503,12 @@ namespace NSCpp {
 				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
 			}
 
+			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS") {
+				throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census'.");
+			}
+
 			if (type == "nation" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
-				throw_err("" + shard + " is not a valid shard for type nation.");
+				throw_err("'" + shard + "' is not a valid shard for type nation.");
 			}
 
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
@@ -480,7 +532,7 @@ namespace NSCpp {
 			}
 
 			for (auto name : extraInfoNames) {
-				uri[0].push_back(name);
+				uri[0].push_back("&" + name + "=");
 			}
 
 			for (auto value : extraInfoValues) {
@@ -488,17 +540,16 @@ namespace NSCpp {
 			}
 
 			std::string response = this->_httpget(url, uri[0], uri[1], headers);
-
+			
 			Shard data;
 			if (response.find("error") != std::string::npos) {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return data;
 			}
-
-			data.shard = shard;
+ 			data.shard = shard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY") {
+			if (upperShard == "HAPPENINGS" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
