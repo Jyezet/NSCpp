@@ -497,16 +497,16 @@ namespace NSCpp {
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
-			if (type != "world" && type != "region" && type != "nation") {
-				throw_err("Request type must be world, region or nation (WA not supported yet).");
-			}
-
-			if (type != "world" && target.empty()) {
-				throw_err("If request type is not world, target must be provided.");
+			if (upperType != "WORLD" && upperType != "REGION" && upperType != "NATION" && upperType != "WA") {
+				throw_err("Request type must be world, region or nation.");
 			}
 
 			if (type.empty()) {
 				throw_err("Type must be provided.");
+			}
+
+			if (upperType != "WORLD" && target.empty()) {
+				throw_err("If request type is not world, target must be provided.");
 			}
 
 			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") {
@@ -517,13 +517,26 @@ namespace NSCpp {
 				throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census'.");
 			}
 
-			if (type == "nation" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
+			if (upperType == "NATION" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
 				throw_err("'" + shard + "' is not a valid shard for type nation.");
+			}
+
+			if (upperType == "REGION" && std::distance(validRegionShards, std::find(std::begin(validRegionShards), std::end(validRegionShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
+				throw_err("'" + shard + "' is not a valid shard for type region.");
+
+			}
+
+			if (upperType == "WORLD" && std::distance(validWorldShards, std::find(std::begin(validWorldShards), std::end(validWorldShards), upperShard)) == sizeof(validWorldShards) / sizeof(*validWorldShards)) {
+				throw_err("'" + shard + "' is not a valid shard for type world.");
+			}
+
+			if (upperType == "WA" && std::distance(validWAShards, std::find(std::begin(validWAShards), std::end(validWAShards), upperShard)) == sizeof(validWAShards) / sizeof(*validWAShards)) {
+				throw_err("'" + shard + "' is not a valid shard for type WA.");
 			}
 
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
 
-			if (type == "nation" && isPrivateShard && password.empty()) {
+			if (upperType == "NATION" && isPrivateShard && password.empty()) {
 				throw_err("Target's password must be provided to access private shard '" + upperShard + "'.");
 			}
 
