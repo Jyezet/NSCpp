@@ -16,13 +16,13 @@ namespace errorManagement {
 
 	// Errors are critical, and most commonly the fault of the author/user. They cause the closing of the program.
 	void _throw_err(std::string error, std::string file, int line) {
-		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << error;
+		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << error << "\n";
 		exit(1);
 	}
 
 	// Exceptions are not the fault of the author/user, but of NS API. For stability matters, they don't close the program.
 	void _throw_exc(std::string except, std::string file, int line) {
-		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << except;
+		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << except << "\n";
 	}
 
 	// Warnings can be disabled setting the errorManagement::disableWarnings variable to true.
@@ -30,7 +30,7 @@ namespace errorManagement {
 		if (disableWarnings) {
 			return;
 		}
-		std::cerr << "\Warning at file: " << file << ", line: " << line << ", " << warning;
+		std::cerr << "\Warning at file: " << file << ", line: " << line << ", " << warning << "\n";
 	}
 }
 
@@ -48,10 +48,10 @@ namespace NSCpp {
 	typedef std::vector<std::string> Strvec;
 	typedef std::vector<std::map<std::string, std::string>> Mapvec;
 	typedef std::map<std::string, std::string> Strmap;
-	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; } Shard;
+	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; Mapvec* optionsPtr; } Shard;
 	typedef struct { std::string nation; std::string password; } AuthCredentials;
 	typedef struct { AuthCredentials credentials; DispatchCategory category; DispatchSubcategory subcategory; std::string title; std::string text; } DispatchInfo;
-	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; } parsedXML;
+	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; } parsedXML;
 	
 	std::string joinTogether(Strvec strvec) {
 		std::string returnData;
@@ -222,12 +222,58 @@ namespace NSCpp {
 			parsedXML resp;
 			tinyxml2::XMLElement* root = document.FirstChildElement(type.c_str())->FirstChildElement(shard.c_str());
 
-			if (shard == "HAPPENINGS") {
+			if (shard == "HAPPENINGS" || shard == "HISTORY") {
 				Mapvec mapvec;
 				for (tinyxml2::XMLElement* _event = root->FirstChildElement("EVENT"); _event != NULL; _event = _event->NextSiblingElement("EVENT")) {
 					std::map<std::string, std::string> tempMap;
 					tempMap["TIMESTAMP"] = _event->FirstChildElement("TIMESTAMP")->GetText();
 					tempMap["TEXT"] = _event->FirstChildElement("TEXT")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "CENSUSRANKS") {
+				Mapvec mapvec;
+				tinyxml2::XMLElement* node = root->FirstChildElement("NATIONS");
+				for (tinyxml2::XMLElement* nation = node->FirstChildElement("NATION"); nation != NULL; nation = nation->NextSiblingElement("NATION")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["NAME"] = nation->FirstChildElement("NAME")->GetText();
+					tempMap["RANK"] = nation->FirstChildElement("RANK")->GetText();
+					tempMap["SCORE"] = nation->FirstChildElement("SCORE")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "OFFICERS") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* officer = root->FirstChildElement("OFFICER"); officer != NULL; officer = officer->NextSiblingElement("OFFICER")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["NATION"] = officer->FirstChildElement("NATION")->GetText();
+					tempMap["OFFICE"] = officer->FirstChildElement("OFFICE")->GetText();
+					tempMap["AUTHORITY"] = officer->FirstChildElement("AUTHORITY")->GetText();
+					tempMap["TIME"] = officer->FirstChildElement("TIME")->GetText();
+					tempMap["BY"] = officer->FirstChildElement("BY")->GetText();
+					tempMap["ORDER"] = officer->FirstChildElement("ORDER")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "MESSAGES") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* post = root->FirstChildElement("POST"); post != NULL; post = post->NextSiblingElement("POST")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["ID"] = post->Attribute("id");
+					tempMap["TIMESTAMP"] = post->FirstChildElement("TIMESTAMP")->GetText();
+					tempMap["NATION"] = post->FirstChildElement("NATION")->GetText();
+					tempMap["STATUS"] = post->FirstChildElement("STATUS")->GetText();
+					tempMap["LIKES"] = post->FirstChildElement("LIKES")->GetText();
+					tempMap["MESSAGE"] = post->FirstChildElement("MESSAGE")->GetText();
 					mapvec.push_back(tempMap);
 				}
 				resp.respMapVec = mapvec;
@@ -260,6 +306,38 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "POLL") {
+				Strmap strmap;
+				Mapvec* options = new Mapvec();
+				strmap["ID"] = root->Attribute("id");
+				strmap["TITLE"] = root->FirstChildElement("TITLE")->GetText();
+				strmap["TEXT"] = root->FirstChildElement("TEXT")->GetText();
+				strmap["REGION"] = root->FirstChildElement("REGION")->GetText();
+				strmap["START"] = root->FirstChildElement("START")->GetText();
+				strmap["STOP"] = root->FirstChildElement("STOP")->GetText();
+				strmap["AUTHOR"] = root->FirstChildElement("AUTHOR")->GetText();
+				tinyxml2::XMLElement* optionsNode = root->FirstChildElement("OPTIONS");
+				for (tinyxml2::XMLElement* option = optionsNode->FirstChildElement("OPTION"); option != NULL; option = option->NextSiblingElement("OPTION")) {
+					Strmap tempMap;
+					tempMap["ID"] = option->Attribute("id");
+					tempMap["OPTIONTEXT"] = option->FirstChildElement("OPTIONTEXT")->GetText();
+					tempMap["VOTES"] = option->FirstChildElement("VOTES")->GetText();
+					if (option->FirstChildElement("VOTERS") != NULL && option->FirstChildElement("VOTERS")->GetText() != NULL) tempMap["VOTERS"] = option->FirstChildElement("VOTERS")->GetText();
+					options->push_back(tempMap);
+				}
+				resp.respMap = strmap;
+				resp.optionsPtr = options;
+				return resp;
+			}
+
+			if (shard == "GAVOTE") {
+				Strmap strmap;
+				strmap["FOR"] = root->FirstChildElement("FOR")->GetText();
+				strmap["AGAINST"] = root->FirstChildElement("AGAINST")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
 			if (shard == "SECTORS") {
 				Strmap strmap;
 				strmap["BLACKMARKET"] = root->FirstChildElement("BLACKMARKET")->GetText();
@@ -277,7 +355,7 @@ namespace NSCpp {
 					tempMap["ID"] = scale->Attribute("id");
 					tempMap["SCORE"] = scale->FirstChildElement("SCORE")->GetText();
 					tempMap["RANK"] = scale->FirstChildElement("RANK")->GetText();
-					tempMap["RRANK"] = scale->FirstChildElement("RRANK")->GetText();
+					if(type == "NATION") tempMap["RRANK"] = scale->FirstChildElement("RRANK")->GetText();
 					mapvec.push_back(tempMap);
 				}
 				resp.respMapVec = mapvec;
@@ -383,6 +461,15 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "EMBASSIES") {
+				Strvec strvec;
+				for (tinyxml2::XMLElement* embassy = root->FirstChildElement("EMBASSY"); embassy != NULL; embassy = embassy->NextSiblingElement("EMBASSY")) {
+					strvec.push_back(embassy->GetText());
+				}
+				resp.respVec = strvec;
+				return resp;
+			}
+
 			if (shard == "LEGISLATION") {
 				Strvec strvec;
 				for (tinyxml2::XMLElement* law = root->FirstChildElement("LAW"); law != NULL; law = law->NextSiblingElement("LAW")) {
@@ -403,6 +490,27 @@ namespace NSCpp {
 			// Same than above
 			if (shard == "WA") {
 				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("UNSTATUS")->GetText();
+				resp.response = data;
+				return resp;
+			}
+
+			// And above
+			if (shard == "BANLIST" && type == "REGION") {
+				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("BANNED")->GetText();
+				resp.response = data;
+				return resp;
+			}
+
+			// And above...
+			if (shard == "WANATIONS" && type == "REGION") {
+				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("UNNATIONS")->GetText();
+				resp.response = data;
+				return resp;
+			}
+
+			// This is getting a bit repetitive
+			if (shard == "NUMWANATIONS" && type == "REGION") {
+				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("NUMUNNATIONS")->GetText();
 				resp.response = data;
 				return resp;
 			}
@@ -546,8 +654,12 @@ namespace NSCpp {
 				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
 			}
 
-			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS") {
-				throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census'.");
+			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS" && upperShard != "CENSUSRANKS") {
+				throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census' or 'censusranks'.");
+			}
+
+			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "limit") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "offset") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "fromid")) && upperShard != "CENSUS" && upperShard != "MESSAGES") {
+				throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
 			}
 
 			if (upperType == "NATION" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
@@ -605,18 +717,20 @@ namespace NSCpp {
  			data.shard = shard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS" || upperShard == "POLICIES") {
+			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "ISSUES" || upperShard == "ISSUESUMMARY" || upperShard == "NOTICES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
 
-			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER" || upperShard == "NOTABLES" || upperShard == "LEGISLATION") {
+			if (upperShard == "BANNERS" || upperShard == "ADMIRABLES" || upperShard == "DOSSIER" || upperShard == "RDOSSIER" || upperShard == "NOTABLES" || upperShard == "LEGISLATION" || upperShard == "EMBASSIES") {
 				data.respVec = this->_parseXML(response, upperType, upperShard).respVec;
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD" || upperShard == "SECTORS") {
-				data.respMap = this->_parseXML(response, upperType, upperShard).respMap;
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL") {
+				parsedXML xml = this->_parseXML(response, upperType, upperShard);
+				data.respMap = xml.respMap;
+				if (upperShard == "POLL") data.optionsPtr = xml.optionsPtr;
 				return data;
 			}
 
