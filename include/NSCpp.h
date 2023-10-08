@@ -30,7 +30,7 @@ namespace errorManagement {
 		if (disableWarnings) {
 			return;
 		}
-		std::cerr << "\Warning at file: " << file << ", line: " << line << ", " << warning << "\n";
+		std::cerr << "\nWarning at file: " << file << ", line: " << line << ", " << warning << "\n";
 	}
 }
 
