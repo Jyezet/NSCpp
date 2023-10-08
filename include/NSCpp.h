@@ -236,6 +236,18 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "UNREAD") {
+				Strmap strmap;
+				strmap["ISSUES"] = root->FirstChildElement("ISSUES")->GetText();
+				strmap["TELEGRAMS"] = root->FirstChildElement("TELEGRAMS")->GetText();
+				strmap["NOTICES"] = root->FirstChildElement("NOTICES")->GetText();
+				strmap["RMB"] = root->FirstChildElement("RMB")->GetText();
+				strmap["WA"] = root->FirstChildElement("WA")->GetText();
+				strmap["NEWS"] = root->FirstChildElement("NEWS")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
 			if (shard == "CENSUS") {
 				Mapvec mapvec;
 				for (tinyxml2::XMLElement* scale = root->FirstChildElement("SCALE"); scale != NULL; scale = scale->NextSiblingElement("SCALE")) {
@@ -559,7 +571,7 @@ namespace NSCpp {
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT") {
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "UNREAD") {
 				data.respMap = this->_parseXML(response, upperType, upperShard).respMap;
 				return data;
 			}
