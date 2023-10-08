@@ -126,7 +126,6 @@ namespace NSCpp {
 				url += paramNames[i] + currValue;
 			}
 
-
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
 			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
 			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false); // Disable SSL cert checking (Probably shouldn't do this but idk)
@@ -158,7 +157,7 @@ namespace NSCpp {
 			curl_slist* headersPrepare = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
 			headersPrepare = curl_slist_append(headersPrepare, requestXPassword.c_str());
 			std::string url = "https://www.nationstates.net/cgi-bin/api.cgi";
-
+			
 			Strvec paramNames = { "?nation=", "&c=", "&mode=" };
 			Strvec paramValues = { credentials.nation, command, "prepare" };
 
@@ -168,7 +167,6 @@ namespace NSCpp {
 			}
 
 			std::string respPrepare = this->_httpget(url, paramNames, paramValues, headersPrepare);
-
 			if (respPrepare.find("error") != std::string::npos) {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return;
@@ -630,9 +628,7 @@ namespace NSCpp {
 				throw_err("Text and region must be provided.");
 			}
 
-			text += "\n\n[i]This was an automated message.[/i]"; // Add small disclaimer at the bottom of the RMB post
-
-			Strvec dataNames = { "region", "text", "v" };
+			Strvec dataNames = { "&region=", "&text=", "&v=" };
 			Strvec dataValues = { region, text, "12" };
 			this->_APICommand(credentials, "rmbpost", dataNames, dataValues);
 		}
