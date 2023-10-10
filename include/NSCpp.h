@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <conio.h>
 
 namespace errorManagement {
 	bool disableWarnings = false;
@@ -20,20 +21,19 @@ namespace errorManagement {
 		exit(1);
 	}
 
-	// Exceptions are not the fault of the author/user, but of NS API. For stability matters, they don't close the program.
+	// Exceptions are not the fault of the author/user, but of NS API (Or a result of its rules, like when breaking simultaneity). For stability matters, they don't close the program.
 	void _throw_exc(std::string except, std::string file, int line) {
 		std::cerr << "\nError at file: " << file << ", line: " << line << ", " << except << "\n";
 	}
 
 	// Warnings can be disabled setting the errorManagement::disableWarnings variable to true.
 	void _throw_warn(std::string warning, std::string file, int line) {
-		if (disableWarnings) {
-			return;
-		}
+		if (disableWarnings) return;
 		std::cerr << "\nWarning at file: " << file << ", line: " << line << ", " << warning << "\n";
 	}
 }
 
+// Shortcut to call exceptions quickly :D
 #ifndef throw_err
 #define throw_err(error) errorManagement::_throw_err(error, __FILE__, __LINE__)
 #endif
@@ -54,16 +54,22 @@ namespace NSCpp {
 	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; } parsedXML;
 	
 	std::string joinTogether(Strvec strvec) {
+		/*
+		 * Joins the elements in a vector with plus signs, in a way it can be sent to NS API through a request
+		 * Parameters:
+		 * Strvec strvec: A vector of strings to join
+		 * Returns:
+		 * A string which results from joining all the elements with plus signs
+		 */
 		std::string returnData;
-		for (auto i : strvec) {
-			returnData += i + "+";
-		}
+		for (auto i : strvec) returnData += i + "+";
 		return returnData;
 	}
 	
 	class API {
 	private:
-		std::string _ua; std::string _xpin = "";
+		std::string _ua, _nation, _password, _xpin = "";
+		bool _lock_requests = false;
 
 		static size_t _writeResponse(void* contents, size_t size, size_t nmemb, void* userp) {
 			((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -80,49 +86,61 @@ namespace NSCpp {
 			return str;
 		}
 
+		std::string _waitForInput() {
+			std::cout << "\nPress any key to send the request...\n";
+			_getch();
+			// Return userclick
+			return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+		}
+
 		void _waitForRatelimit(CURL* curl) {
 			curl_header* ratelimitRemainingHeader;
 			curl_header* ratelimitResetHeader;
-			int ratelimitRemaining;
-			int ratelimitReset;
+			// For security reasons, if the fetching of the response headers fails, we keep the highest values possible and respect them
+			int ratelimitRemaining = 50;
+			int ratelimitReset = 30;
 
 			// IMPORTANT NOTE FOR THE FUTURE:
-			// For some reason only the Gods of C++ understand, 
+			// For some reason only the Gods of C++ understand (Probably shared buffers),
 			// curl_easy_header overwrites all header instances with the last retrieved value
 			// That's why I save the value before it's lost
-
+					
 			// Get header info
-			curl_easy_header(curl, "Ratelimit-Remaining", 0, CURLH_HEADER, -1, &ratelimitRemainingHeader);
-			ratelimitRemaining = atoi(ratelimitRemainingHeader->value);
-			curl_easy_header(curl, "Ratelimit-Reset", 0, CURLH_HEADER, -1, &ratelimitResetHeader);
-			ratelimitReset = atoi(ratelimitResetHeader->value);
+			if (curl_easy_header(curl, "Ratelimit-Remaining", 0, CURLH_HEADER, -1, &ratelimitRemainingHeader) == CURLHE_OK) ratelimitRemaining = atoi(ratelimitRemainingHeader->value);
+			if (curl_easy_header(curl, "Ratelimit-Reset", 0, CURLH_HEADER, -1, &ratelimitResetHeader) == CURLHE_OK)	ratelimitReset = atoi(ratelimitResetHeader->value);
 
 			// Ratelimit control
 			float waitTimeSeconds = (float)ratelimitReset / ratelimitRemaining;
 			std::this_thread::sleep_for(std::chrono::milliseconds((int) waitTimeSeconds * 1000));
 		}
 
-		std::string _httpget(std::string url, Strvec paramNames, Strvec paramValues, curl_slist* headers, bool controlRatelimit = true) {
+		std::string _httpget(std::string url, Strvec paramNames, Strvec paramValues, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
+			if (url.find("page=telegrams") != std::string::npos || url.find("page=dilemmas") != std::string::npos || url.find("page=compose_telegram") != std::string::npos || url.find("page=store") != std::string::npos || url.find("page=help") != std::string::npos) throw_err("Attempted to request one of the forbidden sites (page=telegrams, page=dilemmas, page=compose_telegram, page=store or page=help).");
+			
+			if ((waitForInput || url.find("cgi-bin") == std::string::npos) && this->_lock_requests) {
+				throw_exc("Requests are locked to respect simultaneity rules.");
+				return "";
+			}
+
+			if (waitForInput || url.find("cgi-bin") == std::string::npos) this->_lock_requests = true;
+			
+			// Requests triggered manually don't need to abide by ratelimiting rules
+			controlRatelimit = !waitForInput;
 			CURL* curl;
 			CURLcode response;
 			std::string respContent;
 			curl_global_init(CURL_GLOBAL_ALL);
 			curl = curl_easy_init();
-			if (!curl) {
-				throw_err("Couldn't initialize CURL.");
-			}
+			if (!curl) throw_err("Couldn't initialize CURL.");
 
-			if (paramNames.size() != paramValues.size()) {
-				throw_err("Mismatched URL parameter sizes.");
-			}
+			if (paramNames.size() != paramValues.size()) throw_err("Mismatched URL parameter sizes.");
 
 			// All this just to escape URL parameters correctly T_T
 			for (int i = 0; i < paramNames.size(); i++) {
 				std::string currValue = curl_easy_escape(curl, paramValues[i].c_str(), 0);
-				if (paramNames[i] == "&q=" || paramNames[i] == "?q=") {
-					// Turn all shards to lowercase, as *SOME* API shards are case sensitive (like dossier)
-					currValue = this->_lower(currValue);
-				}
+
+				// Turn all shards to lowercase, as *SOME* API shards are case sensitive (like dossier)
+				if (paramNames[i] == "&q=" || paramNames[i] == "?q=") currValue = this->_lower(currValue);
 				url += paramNames[i] + currValue;
 			}
 
@@ -132,28 +150,74 @@ namespace NSCpp {
 			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers); // Add request headers (User-Agent)
 			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, this->_writeResponse); // Parse request body using this function
 			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respContent); // Write parsed request body into this string variable
+			
+			if (waitForInput || url.find("cgi-bin") == std::string::npos) {
+				std::string firstChar = url.find("?") == std::string::npos ? "?" : "&";
+				url += firstChar + "userclick=" + this->_waitForInput();
+			}
+			
 			response = curl_easy_perform(curl); // Send request
-			if (response != CURLE_OK) {
-				throw_err(curl_easy_strerror(response));
-			}
+			if (response != CURLE_OK) throw_err(curl_easy_strerror(response));
 
-			if (controlRatelimit) {
-				this->_waitForRatelimit(curl);
-			}
+			if (controlRatelimit) this->_waitForRatelimit(curl);
 
 			curl_header* xpinHeader;
-			if (curl_easy_header(curl, "X-Pin", 0, CURLH_HEADER, -1, &xpinHeader) == CURLHE_OK) {
-				this->_xpin = xpinHeader->value;
-			}
+			if (curl_easy_header(curl, "X-Pin", 0, CURLH_HEADER, -1, &xpinHeader) == CURLHE_OK) this->_xpin = xpinHeader->value;
 
 			curl_easy_cleanup(curl);
 			curl_global_cleanup();
+			this->_lock_requests = false;
 			return respContent;
 		}
 
-		template <typename T>
-		bool _elementInArr(T arr[], T element) {
-			return std::distance(arr, std::find(std::begin(arr), std::end(arr), element)) == sizeof(arr) / sizeof(*arr);
+		std::string _httppost(std::string url, Strmap postBody, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
+			if (url.find("page=telegrams") != std::string::npos || url.find("page=dilemmas") != std::string::npos || url.find("page=compose_telegram") != std::string::npos || url.find("page=store") != std::string::npos || url.find("page=help") != std::string::npos) throw_err("Attempted to request one of the forbidden sites (page=telegrams, page=dilemmas, page=compose_telegram, page=store or page=help).");
+			
+			if ((waitForInput || url.find("cgi-bin") == std::string::npos) && this->_lock_requests) {
+				throw_exc("Requests are locked to respect simultaneity rules.");
+				return "";
+			}
+
+			if (waitForInput || url.find("cgi-bin") == std::string::npos) this->_lock_requests = true;
+			
+			// Requests triggered manually don't need to abide by ratelimiting rules
+			controlRatelimit = !waitForInput;
+			CURL* curl;
+			CURLcode response;
+			std::string respContent;
+			curl_global_init(CURL_GLOBAL_ALL);
+			curl = curl_easy_init();
+			if (!curl) throw_err("Couldn't initialize CURL.");
+
+			std::string postBodyFixed;
+			for (auto it = postBody.begin(); it != postBody.end(); it++) postBodyFixed += it->first + "=" + it->second + "&";
+			postBodyFixed = postBodyFixed.substr(0, postBodyFixed.size() - 1); // Remove trailing &
+
+			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBodyFixed); // Post body (It posts to forms, to post JSON set Content-Type header to application/json and send the post body in JSON format)
+			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
+			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false); // Disable SSL cert checking (Probably shouldn't do this but idk)
+			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers); // Add request headers (User-Agent)
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, this->_writeResponse); // Parse request body using this function
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respContent); // Write parsed request body into this string variable
+			
+			if (waitForInput || url.find("cgi-bin") == std::string::npos) {
+				std::string firstChar = url.find("?") == std::string::npos ? "?" : "&";
+				url += firstChar + "userclick=" + this->_waitForInput();
+			}
+
+			response = curl_easy_perform(curl); // Send request
+			if (response != CURLE_OK) throw_err(curl_easy_strerror(response));
+
+			// if (controlRatelimit) this->_waitForRatelimit(curl);
+
+			curl_header* xpinHeader;
+			if (curl_easy_header(curl, "X-Pin", 0, CURLH_HEADER, -1, &xpinHeader) == CURLHE_OK) this->_xpin = xpinHeader->value;
+
+			curl_easy_cleanup(curl);
+			curl_global_cleanup();
+			this->_lock_requests = false;
+			return respContent;
 		}
 
 		void _APICommand(AuthCredentials credentials, std::string command, Strvec dataNames, Strvec dataValues) {
@@ -181,7 +245,7 @@ namespace NSCpp {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return;
 			}
-
+			std::cout << respPrepare;
 			tinyxml2::XMLDocument document;
 			document.Parse(respPrepare.c_str());
 			const char* rawToken = document.FirstChildElement("NATION")->FirstChildElement("SUCCESS")->GetText();
@@ -195,9 +259,7 @@ namespace NSCpp {
 			paramValues.push_back(token);
 
 			std::string respExecute = this->_httpget(url, paramNames, paramValues, headersExecute);
-			if (respExecute.find("error") != std::string::npos) {
-				throw_exc("Nationstates API has thrown an unknown error.");
-			}
+			if (respExecute.find("error") != std::string::npos) throw_exc("Nationstates API has thrown an unknown error.");
 		}
 
 		std::vector<Strvec> _buildAPIRequestURI(std::string type, std::string shard, std::string target) {
@@ -219,9 +281,7 @@ namespace NSCpp {
 			returnData.push_back(paramNames);
 			returnData.push_back(paramValues);
 
-			if (returnData[0].size() != returnData[1].size()) {
-				throw_err("Retrieved a bad URI.");
-			}
+			if (returnData[0].size() != returnData[1].size()) throw_err("Retrieved a bad URI.");
 
 			return returnData;
 		}
@@ -600,22 +660,15 @@ namespace NSCpp {
 		API() { ; } // Empty object as result of default constructor :D
 
 
-		API(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser) {
-			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) {
-				throw_err("Script function, author and user must be provided.");
-			}
+		API(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser, AuthCredentials credentials = {}) {
+			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) throw_err("Script function, author and user must be provided.");
 
 			this->_ua = scriptFunction + ", developed by nation=" + scriptAuthor + " and in use by nation=" + scriptUser + ", request sent using NSCpp API wrapper written by nation=jyezet.";
-		}
-
-		// Copy constructor
-		API(API* api) {
-			if (api->getUserAgent().empty()) {
-				throw_err("Cannot copy API object with empty user agent.");
+			
+			if (!credentials.nation.empty() && !credentials.password.empty()) {
+				this->_nation = credentials.nation;
+				this->_password = credentials.password;
 			}
-
-			this->_ua = api->getUserAgent();
-			delete api; // There can only be one object at a time
 		}
 
 		// Doing std::cout << APIObject displays user agent
@@ -625,11 +678,52 @@ namespace NSCpp {
 		}
 
 		void setUserAgent(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser) {
-			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) {
-				throw_err("Script function, author and user must be provided.");
-			}
+			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) throw_err("Script function, author and user must be provided.");
 
 			this->_ua = scriptFunction + ", developed by nation=" + scriptAuthor + " and in use by nation=" + scriptUser + ", request sent using NSCpp API wrapper written by nation=jyezet.";
+		}
+
+		void login(AuthCredentials credentials) {
+			/*
+			 * Sets a default credential, which will be used in case no other credentials are provided in certain functions
+			 * Parameters:
+			 * AuthCredentials credentials (nation, password): A struct containing credentials to save
+			 * Returns:
+			 * Nothing
+			 */
+			if (credentials.nation.empty() || credentials.password.empty()) throw_err(authErr);
+			this->_nation = credentials.nation;
+			this->_password = credentials.password;
+			}
+
+		bool auth(AuthCredentials credentials) {
+			/* Sets or updates the credentials used in requests that involve performing an action with a nation
+			 * Parameters:
+			 * AuthCredentials credentials (nation, password): A struct containing credentials used to authenticate
+			 * Returns:
+			 * true if authentication was successful, otherwise it'll return false
+			 */
+			if (credentials.nation.empty() || credentials.password.empty()) {
+				if (this->_nation.empty() || this->_password.empty()) {
+					throw_exc(authErr); // In this case I don't stop execution of the script, because I want auth() to be a stable function that doesn't just go haha fuck you
+					return false;
+				} 
+				credentials.nation = this->_nation;
+				credentials.password = this->_password;
+			}
+
+			Strmap postInfo;
+			postInfo["nation"] = credentials.nation;
+			postInfo["password"] = credentials.password;
+			postInfo["theme"] = "century";
+			postInfo["logging_in"] = "1";
+			postInfo["submit"] = "Login";
+
+			std::string requestUserAgent = "User-Agent: " + this->_ua;
+			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+
+			std::string response = this->_httppost("https://www.nationstates.net/page=display_region/region=NSCpp", postInfo, headers, true);
+			return response.find(credentials.nation) != std::string::npos;
 		}
 
 		std::string getUserAgent() {
@@ -637,9 +731,7 @@ namespace NSCpp {
 		}
 
 		void setCustomUserAgent(std::string useragent) {
-			if (useragent.empty()) {
-				throw_err("User agent must be provided.");
-			}
+			if (useragent.empty()) throw_err("User agent must be provided.");
 
 			this->_ua = useragent;
 		}
@@ -647,12 +739,14 @@ namespace NSCpp {
 		Shard privateAPIRequest(AuthCredentials credentials, std::string shard, Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
 			std::string upperShard = this->_upper(shard);
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
-			if (!isPrivateShard) {
-				throw_err("You should you APIRequest for public shard requests, or make sure you've entered the shard's name correctly.");
-			}
+			if (!isPrivateShard) throw_err("You should you APIRequest for public shard requests, or make sure you've entered the shard's name correctly.");
 
-			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") {
-				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
+			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
+
+			if (credentials.nation.empty() || credentials.password.empty()) {
+				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
+				credentials.nation = this->_nation;
+				credentials.password = this->_password;
 			}
 
 			std::vector<Strvec> uri = this->_buildAPIRequestURI("nation", upperShard, credentials.nation);
@@ -665,13 +759,8 @@ namespace NSCpp {
 			headers = curl_slist_append(headers, XPassword.c_str());
 
 
-			for (auto name : extraInfoNames) {
-				uri[0].push_back("&" + name + "=");
-			}
-
-			for (auto value : extraInfoValues) {
-				uri[1].push_back(value);
-			}
+			for (auto name : extraInfoNames) uri[0].push_back("&" + name + "=");
+			for (auto value : extraInfoValues) uri[1].push_back(value);
 
 			std::string response = this->_httpget(url, uri[0], uri[1], headers);
 
@@ -697,71 +786,44 @@ namespace NSCpp {
 				data.respMap = this->_parseXML(response, "NATION", upperShard).respMap;
 				return data;
 			}
-		}
+		}		
 
 		Shard APIRequest(std::string type, std::string shard, std::string target = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
-			if (upperType != "WORLD" && upperType != "REGION" && upperType != "NATION" && upperType != "WA") {
-				throw_err("Request type must be world, region or nation.");
-			}
+			if (upperType != "WORLD" && upperType != "REGION" && upperType != "NATION" && upperType != "WA") throw_err("Request type must be world, region or nation.");
 
-			if (type.empty()) {
-				throw_err("Type must be provided.");
-			}
+			if (type.empty()) throw_err("Type must be provided.");
 
-			if (upperType != "WORLD" && target.empty()) {
-				throw_err("If request type is not world, target must be provided.");
-			}
+			if (upperType != "WORLD" && target.empty()) throw_err("If request type is not world, target must be provided.");
 
-			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") {
-				throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
-			}
+			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
 
-			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS" && upperShard != "CENSUSRANKS") {
-				throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census' or 'censusranks'.");
-			}
+			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS" && upperShard != "CENSUSRANKS") throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census' or 'censusranks'.");
 
-			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "limit") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "offset") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "fromid")) && upperShard != "CENSUS" && upperShard != "MESSAGES") {
-				throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
-			}
+			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "limit") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "offset") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "fromid")) && upperShard != "CENSUS" && upperShard != "MESSAGES") throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
 
-			if (upperType == "NATION" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
-				throw_err("'" + shard + "' is not a valid shard for type nation.");
-			}
+			if (upperType == "NATION" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) throw_err("'" + shard + "' is not a valid shard for type nation.");
 
-			if (upperType == "REGION" && std::distance(validRegionShards, std::find(std::begin(validRegionShards), std::end(validRegionShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) {
-				throw_err("'" + shard + "' is not a valid shard for type region.");
+			if (upperType == "REGION" && std::distance(validRegionShards, std::find(std::begin(validRegionShards), std::end(validRegionShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) throw_err("'" + shard + "' is not a valid shard for type region.");
 
-			}
+			if (upperType == "WORLD" && std::distance(validWorldShards, std::find(std::begin(validWorldShards), std::end(validWorldShards), upperShard)) == sizeof(validWorldShards) / sizeof(*validWorldShards)) throw_err("'" + shard + "' is not a valid shard for type world.");
 
-			if (upperType == "WORLD" && std::distance(validWorldShards, std::find(std::begin(validWorldShards), std::end(validWorldShards), upperShard)) == sizeof(validWorldShards) / sizeof(*validWorldShards)) {
-				throw_err("'" + shard + "' is not a valid shard for type world.");
-			}
-
-			if (upperType == "WA" && std::distance(validWAShards, std::find(std::begin(validWAShards), std::end(validWAShards), upperShard)) == sizeof(validWAShards) / sizeof(*validWAShards)) {
-				throw_err("'" + shard + "' is not a valid shard for type WA.");
-			}
+			if (upperType == "WA" && std::distance(validWAShards, std::find(std::begin(validWAShards), std::end(validWAShards), upperShard)) == sizeof(validWAShards) / sizeof(*validWAShards))	throw_err("'" + shard + "' is not a valid shard for type WA.");
 
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
 
-			if (isPrivateShard) {
-				throw_err("You should you privateAPIRequest to request the " + upperShard + " private shard.");
-			}
+			if (isPrivateShard) throw_err("You should you privateAPIRequest to request the " + upperShard + " private shard.");
 
 			std::vector<Strvec> uri = this->_buildAPIRequestURI(type, upperShard, target);
 			std::string url = "https://www.nationstates.net/cgi-bin/api.cgi";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
 			
-			for (auto name : extraInfoNames) {
-				uri[0].push_back("&" + name + "=");
-			}
+			for (auto name : extraInfoNames) uri[0].push_back("&" + name + "=");
 
-			for (auto value : extraInfoValues) {
-				uri[1].push_back(value);
-			}
+			for (auto value : extraInfoValues) uri[1].push_back(value);
 
 			std::string response = this->_httpget(url, uri[0], uri[1], headers);
 			
@@ -794,18 +856,44 @@ namespace NSCpp {
 			return data;
 		}
 
+		bool banject(AuthCredentials credentials, std::string target, bool checkFunctionWorked = true) {
+			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
+			Strmap postInfo;
+			postInfo["nation_name"] = target;
+			postInfo["ban"] = "1";
+			std::string requestUserAgent = "User-Agent: " + this->_ua;
+			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+			this->_httppost(url, postInfo, headers, true);
+			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
+			
+			// If the target nation's current region is TRR, it means the function has worked
+			return this->_upper(this->APIRequest("NATION", "REGION", target).response) == "THE_REJECTED_REALMS";
+		}
+
+		bool eject(AuthCredentials credentials, std::string target, bool checkFunctionWorked = true) {
+			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
+			Strmap postInfo;
+			postInfo["nation_name"] = target;
+			postInfo["eject"] = "1";
+			std::string requestUserAgent = "User-Agent: " + this->_ua;
+			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+			this->_httppost(url, postInfo, headers, true);
+			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
+
+			// If the target nation's current region is TRR, it means the function has worked
+			return this->_upper(this->APIRequest("NATION", "REGION", target).response) == "THE_REJECTED_REALMS";
+		}
+
 		void APIDispatch(DispatchInfo info, std::string action, int dispatchID = 0) {
-			if (action != "add" && action != "edit" && action != "remove") {
-				throw_err("Dispatch action must be add, edit or remove.");
-			}
+			if (action != "add" && action != "edit" && action != "remove") throw_err("Dispatch action must be add, edit or remove.");
 
 			if (info.credentials.nation.empty() || info.credentials.password.empty()) {
-				throw_err("Please provide an AuthCredentials struct with non-empty fields.");
+				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
+				info.credentials.nation = this->_nation;
+				info.credentials.password = this->_password;
 			}
 
-			if (action != "remove" && (info.title.empty() || info.text.empty() || (int)info.category == 0 || (int)info.subcategory == 0)) {
-				throw_err("Dispatch information must be provided if action is not remove.");
-			}
+			if (action != "remove" && (info.title.empty() || info.text.empty() || (int)info.category == 0 || (int)info.subcategory == 0)) throw_err("Dispatch information must be provided if action is not remove.");
 
 			Strvec dataNames;
 			Strvec dataValues;
@@ -837,16 +925,31 @@ namespace NSCpp {
 
 		void APIRMB(AuthCredentials credentials, std::string text, std::string region) {
 			if (credentials.nation.empty() || credentials.password.empty()) {
-				throw_err("Please provide an AuthCredentials struct with non-empty fields.");
+				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
+				credentials.nation = this->_nation;
+				credentials.password = this->_password;
 			}
 
-			if (text.empty() || region.empty()) {
-				throw_err("Text and region must be provided.");
-			}
+			if (text.empty() || region.empty()) throw_err("Text and region must be provided.");
 
 			Strvec dataNames = { "&region=", "&text=", "&v=" };
 			Strvec dataValues = { region, text, "12" };
 			this->_APICommand(credentials, "rmbpost", dataNames, dataValues);
+		}
+
+		void APIIssue(AuthCredentials credentials, std::string issue, std::string option) {
+			// Note: Option IDs begin counting from 0
+			if (credentials.nation.empty() || credentials.password.empty()) {
+				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
+				credentials.nation = this->_nation;
+				credentials.password = this->_password;
+			}
+
+			if (issue.empty() || option.empty()) throw_err("Issue ID and option must be provided.");
+
+			Strvec dataNames = { "issue", "option", "&v=" };
+			Strvec dataValues = { issue, option, "12" };
+			this->_APICommand(credentials, "issue", dataNames, dataValues);
 		}
 	};
 }

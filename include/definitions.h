@@ -1,6 +1,8 @@
 #pragma once
 #include <iostream>
 
+#include <chrono>
+
 namespace NSCpp {
 	// Why nationstates, why
 	enum class DispatchCategory {
@@ -135,4 +137,25 @@ namespace NSCpp {
 	const std::string validWorldShards[] = { "BANNER", "CENSUS", "CENSUSID", "CENSUSDESC", "CENSUSNAME", "CENSUSRANKS", "CENSUSSCALE", "CENSUSTITLE", "DISPATCH", "DISPATCHLIST", "FACTION", "FACTIONS", "FEATUREDREGION", "HAPPENINGS", "LASTEVENTID", "NATIONS", "NEWNATIONS", "NEWNATIONDETAILS", "NUMNATIONS", "NUMREGIONS", "POLL", "REGIONS", "REGIONSBYTAG", "TGQUEUE" };
 	const std::string validWAShards[] = { "NUMNATIONS", "NUMDELEGATES", "DELEGATES", "MEMBERS", "HAPPENINGS", "PROPOSALS", "RESOLUTION", "VOTERS", "VOTETRACK", "DELLOG", "DELVOTES", "LASTRESOLUTION" };
 	const std::string privateShards[] = { "DOSSIER", "ISSUES", "ISSUESUMMARY", "NEXTISSUE", "NEXTISSUETIME", "NOTICES", "PACKS", "PING", "RDOSSIER", "UNREAD" };
+
+	const std::string authErr = "Please supply valid credentials.";
+
+	// Ignore this class, it's for benchmarking (Code rightfully stolen from https://www.youtube.com/watch?v=YG4jexlSAjc)
+	class Timer {
+		std::chrono::time_point<std::chrono::high_resolution_clock> startTimepoint;
+		std::string timerName;
+	public:
+		Timer(std::string name) {
+			this->startTimepoint = std::chrono::high_resolution_clock::now();
+			this->timerName = name;
+		}
+
+		~Timer() {
+			auto endTimepoint = std::chrono::high_resolution_clock::now();
+			auto start = std::chrono::time_point_cast<std::chrono::milliseconds>(startTimepoint).time_since_epoch().count();
+			auto end = std::chrono::time_point_cast<std::chrono::milliseconds>(endTimepoint).time_since_epoch().count();
+			auto duration = end - start;
+			std::cout << "\n" << this->timerName << " took " << duration << " ms\n";
+		}
+	};
 }
