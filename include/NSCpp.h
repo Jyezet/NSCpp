@@ -209,7 +209,7 @@ namespace NSCpp {
 			response = curl_easy_perform(curl); // Send request
 			if (response != CURLE_OK) throw_err(curl_easy_strerror(response));
 
-			// if (controlRatelimit) this->_waitForRatelimit(curl);
+			if (controlRatelimit) this->_waitForRatelimit(curl);
 
 			curl_header* xpinHeader;
 			if (curl_easy_header(curl, "X-Pin", 0, CURLH_HEADER, -1, &xpinHeader) == CURLHE_OK) this->_xpin = xpinHeader->value;
