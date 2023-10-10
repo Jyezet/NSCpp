@@ -856,7 +856,7 @@ namespace NSCpp {
 			return data;
 		}
 
-		bool banject(AuthCredentials credentials, std::string target, bool checkFunctionWorked = true) {
+		bool banject(std::string target, bool checkFunctionWorked = true) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			Strmap postInfo;
 			postInfo["nation_name"] = target;
@@ -870,7 +870,7 @@ namespace NSCpp {
 			return this->_upper(this->APIRequest("NATION", "REGION", target).response) == "THE_REJECTED_REALMS";
 		}
 
-		bool eject(AuthCredentials credentials, std::string target, bool checkFunctionWorked = true) {
+		bool eject(std::string target, bool checkFunctionWorked = true) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			Strmap postInfo;
 			postInfo["nation_name"] = target;
