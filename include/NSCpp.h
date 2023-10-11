@@ -68,7 +68,7 @@ namespace NSCpp {
 	
 	class API {
 	private:
-		std::string _ua, _nation, _password, _xpin = "", _localid = "", _chk = "";
+		std::string _ua, _nation, _password, _lastcommand, _xpin = "", _localid = "", _chk = "";
 		bool _lock_requests = false;
 
 		static size_t _writeResponse(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -220,7 +220,7 @@ namespace NSCpp {
 			return respContent;
 		}
 
-		void _APICommand(AuthCredentials credentials, std::string command, Strvec dataNames, Strvec dataValues) {
+		void _APICommand(AuthCredentials credentials, std::string command, Strvec dataNames, Strvec dataValues, bool issue = false) {
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			std::string requestXPassword = "X-Password: " + credentials.password;
 			curl_slist* headersPrepare = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
@@ -245,6 +245,10 @@ namespace NSCpp {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return;
 			}
+
+			this->_lastcommand = respPrepare;
+			if (issue) return; // Issues don't require a token and that stuff
+
 			tinyxml2::XMLDocument document;
 			document.Parse(respPrepare.c_str());
 			const char* rawToken = document.FirstChildElement("NATION")->FirstChildElement("SUCCESS")->GetText();
@@ -962,7 +966,7 @@ namespace NSCpp {
 			this->_APICommand(credentials, "rmbpost", dataNames, dataValues);
 		}
 
-		void APIIssue(AuthCredentials credentials, std::string issue, std::string option) {
+		bool APIIssue(AuthCredentials credentials, std::string issue, std::string option) {
 			// Note: Option IDs begin counting from 0
 			if (credentials.nation.empty() || credentials.password.empty()) {
 				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
@@ -972,9 +976,10 @@ namespace NSCpp {
 
 			if (issue.empty() || option.empty()) throw_err("Issue ID and option must be provided.");
 
-			Strvec dataNames = { "issue", "option", "&v=" };
+			Strvec dataNames = { "&issue=", "&option=", "&v=" };
 			Strvec dataValues = { issue, option, "12" };
-			this->_APICommand(credentials, "issue", dataNames, dataValues);
+			this->_APICommand(credentials, "issue", dataNames, dataValues, true);
+			return this->_lastcommand.find("<OK>1</OK>") != std::string::npos;
 		}
 	};
 }
