@@ -68,7 +68,7 @@ namespace NSCpp {
 	
 	class API {
 	private:
-		std::string _ua, _nation, _password, _xpin = "";
+		std::string _ua, _nation, _password, _xpin = "", _localid = "", _chk = "";
 		bool _lock_requests = false;
 
 		static size_t _writeResponse(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -189,6 +189,8 @@ namespace NSCpp {
 			curl = curl_easy_init();
 			if (!curl) throw_err("Couldn't initialize CURL.");
 
+			// Special thanks to audreyreal for teaching me about this chk thingy
+			postBody += "localid=" + this->_localid + "&chk=" + this->_chk;
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody.c_str()); // Post body (It posts to forms, to post JSON set Content-Type header to application/json and send the post body in JSON format)
 			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
@@ -196,7 +198,9 @@ namespace NSCpp {
 			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers); // Add request headers (User-Agent)
 			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, this->_writeResponse); // Parse request body using this function
 			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respContent); // Write parsed request body into this string variable
-			
+			curl_easy_setopt(curl, CURLOPT_COOKIEJAR, "./sessionCookies.txt");
+			curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "./sessionCookies.txt");
+
 			if (waitForInput || url.find("cgi-bin") == std::string::npos) {
 				std::string firstChar = url.find("?") == std::string::npos ? "?" : "&";
 				url += firstChar + "userclick=" + this->_waitForInput();
@@ -664,6 +668,9 @@ namespace NSCpp {
 				this->_nation = credentials.nation;
 				this->_password = credentials.password;
 			}
+
+			// Delete any previous sessions
+			remove("./sessionCookies.txt");
 		}
 
 		// Doing std::cout << APIObject displays user agent
@@ -713,6 +720,32 @@ namespace NSCpp {
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 
 			std::string response = this->_httppost("https://www.nationstates.net/page=display_region/region=NSCpp", postInfo, headers, true);
+			
+			// Get localid and chk if possible
+			if (response.find("<input type=\"hidden\" name=\"chk\" value=\"") != std::string::npos) {
+				std::string tempChk;
+				int chkPosition = response.find("<input type=\"hidden\" name=\"chk\" value=\"") + strlen("<input type=\"hidden\" name=\"chk\" value=\"");
+				
+				// If response[i] is a double quote (") it means we've reached the end of the value attribute
+				for (int i = chkPosition; response[i] != '"'; i++) {
+					tempChk += response[i];
+				}
+
+				this->_chk = tempChk;
+			}
+
+			if (response.find("<input type=\"hidden\" name=\"localid\" value=\"") != std::string::npos) {
+				std::string tempLocalid;
+				int localidPosition = response.find("<input type=\"hidden\" name=\"localid\" value=\"") + strlen("<input type=\"hidden\" name=\"localid\" value=\"");
+
+				// If response[i] is a double quote (") it means we've reached the end of the value attribute
+				for (int i = localidPosition; response[i] != '"'; i++) {
+					tempLocalid += response[i];
+				}
+
+				this->_localid = tempLocalid;
+			}
+
 			// If you log in, the HTML body tag will have a data-nname attribute equal to your nation name
 			return response.find("data-nname=\"" + credentials.nation + "\"") != std::string::npos;
 		}
@@ -847,28 +880,33 @@ namespace NSCpp {
 			return data;
 		}
 
-		bool banject(std::string target, bool checkFunctionWorked = true) {
+		bool banject(std::string target) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			std::string postInfo = "nation_name=" + target + "&ban=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
-			this->_httppost(url, postInfo, headers, true);
-			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
-			
-			// If the target nation's current region is TRR, it means the function has worked
-			return this->_upper(this->APIRequest("NATION", "REGION", target).response) == "THE_REJECTED_REALMS";
+			std::string resp = this->_httppost(url, postInfo, headers, true);
+
+			return resp.find("has been ejected and banned from") != std::string::npos;
 		}
 
-		bool eject(std::string target, bool checkFunctionWorked = true) {
+		bool eject(std::string target) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			std::string postInfo = "nation_name=" + target + "&eject=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 			std::string resp = this->_httppost(url, postInfo, headers, true);
-			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
 
-			// If the target nation's current region is TRR, it means the function has worked
-			return this->_upper(this->APIRequest("NATION", "REGION", target).response) == "THE_REJECTED_REALMS";
+			return resp.find("has been ejected from") != std::string::npos;
+		}
+
+		bool clearBanlist() {
+			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
+			std::string requestUserAgent = "User-Agent: " + this->_ua;
+			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
+			std::string resp = this->_httppost(url, "unbanall=1", headers, true);
+
+			return resp.find("The regional ban list has been successfully cleared") != std::string::npos;
 		}
 
 		void APIDispatch(DispatchInfo info, std::string action, int dispatchID = 0) {
