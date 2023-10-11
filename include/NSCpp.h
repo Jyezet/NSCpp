@@ -202,9 +202,6 @@ namespace NSCpp {
 				url += firstChar + "userclick=" + this->_waitForInput();
 			}
 
-			std::cout << "Post body: " << postBody << "\n";
-			std::cout << "URL: " << url << "\n";
-
 			response = curl_easy_perform(curl); // Send request
 			if (response != CURLE_OK) throw_err(curl_easy_strerror(response));
 
@@ -244,7 +241,6 @@ namespace NSCpp {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return;
 			}
-			std::cout << respPrepare;
 			tinyxml2::XMLDocument document;
 			document.Parse(respPrepare.c_str());
 			const char* rawToken = document.FirstChildElement("NATION")->FirstChildElement("SUCCESS")->GetText();
@@ -717,7 +713,6 @@ namespace NSCpp {
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 
 			std::string response = this->_httppost("https://www.nationstates.net/page=display_region/region=NSCpp", postInfo, headers, true);
-			std::cout << response << "\n";
 			// If you log in, the HTML body tag will have a data-nname attribute equal to your nation name
 			return response.find("data-nname=\"" + credentials.nation + "\"") != std::string::npos;
 		}
@@ -870,7 +865,6 @@ namespace NSCpp {
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 			std::string resp = this->_httppost(url, postInfo, headers, true);
-			std::cout << "Response: " << resp << "\n";
 			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
 
 			// If the target nation's current region is TRR, it means the function has worked
