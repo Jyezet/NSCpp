@@ -170,7 +170,7 @@ namespace NSCpp {
 			return respContent;
 		}
 
-		std::string _httppost(std::string url, Strmap postBody, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
+		std::string _httppost(std::string url, std::string postBody, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
 			if (url.find("page=telegrams") != std::string::npos || url.find("page=dilemmas") != std::string::npos || url.find("page=compose_telegram") != std::string::npos || url.find("page=store") != std::string::npos || url.find("page=help") != std::string::npos) throw_err("Attempted to request one of the forbidden sites (page=telegrams, page=dilemmas, page=compose_telegram, page=store or page=help).");
 			
 			if ((waitForInput || url.find("cgi-bin") == std::string::npos) && this->_lock_requests) {
@@ -189,12 +189,8 @@ namespace NSCpp {
 			curl = curl_easy_init();
 			if (!curl) throw_err("Couldn't initialize CURL.");
 
-			std::string postBodyFixed;
-			for (auto it = postBody.begin(); it != postBody.end(); it++) postBodyFixed += it->first + "=" + it->second + "&";
-			postBodyFixed = postBodyFixed.substr(0, postBodyFixed.size() - 1); // Remove trailing &
-
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBodyFixed); // Post body (It posts to forms, to post JSON set Content-Type header to application/json and send the post body in JSON format)
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody.c_str()); // Post body (It posts to forms, to post JSON set Content-Type header to application/json and send the post body in JSON format)
 			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
 			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false); // Disable SSL cert checking (Probably shouldn't do this but idk)
 			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers); // Add request headers (User-Agent)
@@ -205,6 +201,9 @@ namespace NSCpp {
 				std::string firstChar = url.find("?") == std::string::npos ? "?" : "&";
 				url += firstChar + "userclick=" + this->_waitForInput();
 			}
+
+			std::cout << "Post body: " << postBody << "\n";
+			std::cout << "URL: " << url << "\n";
 
 			response = curl_easy_perform(curl); // Send request
 			if (response != CURLE_OK) throw_err(curl_easy_strerror(response));
@@ -712,18 +711,15 @@ namespace NSCpp {
 				credentials.password = this->_password;
 			}
 
-			Strmap postInfo;
-			postInfo["nation"] = credentials.nation;
-			postInfo["password"] = credentials.password;
-			postInfo["theme"] = "century";
-			postInfo["logging_in"] = "1";
-			postInfo["submit"] = "Login";
+			std::string postInfo = "nation=" + credentials.nation + "&password=" + credentials.password + "&theme=century&logging_in=1&submit=Login";
 
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 
 			std::string response = this->_httppost("https://www.nationstates.net/page=display_region/region=NSCpp", postInfo, headers, true);
-			return response.find(credentials.nation) != std::string::npos;
+			std::cout << response << "\n";
+			// If you log in, the HTML body tag will have a data-nname attribute equal to your nation name
+			return response.find("data-nname=\"" + credentials.nation + "\"") != std::string::npos;
 		}
 
 		std::string getUserAgent() {
@@ -858,9 +854,7 @@ namespace NSCpp {
 
 		bool banject(std::string target, bool checkFunctionWorked = true) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
-			Strmap postInfo;
-			postInfo["nation_name"] = target;
-			postInfo["ban"] = "1";
+			std::string postInfo = "nation_name=" + target + "&ban=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 			this->_httppost(url, postInfo, headers, true);
@@ -872,12 +866,11 @@ namespace NSCpp {
 
 		bool eject(std::string target, bool checkFunctionWorked = true) {
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
-			Strmap postInfo;
-			postInfo["nation_name"] = target;
-			postInfo["eject"] = "1";
+			std::string postInfo = "nation_name=" + target + "&eject=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
-			this->_httppost(url, postInfo, headers, true);
+			std::string resp = this->_httppost(url, postInfo, headers, true);
+			std::cout << "Response: " << resp << "\n";
 			if (!checkFunctionWorked) return false; // This would actually be "indetermined", as we can't really check what happened
 
 			// If the target nation's current region is TRR, it means the function has worked
