@@ -53,19 +53,6 @@ namespace NSCpp {
 	typedef struct { AuthCredentials credentials; DispatchCategory category; DispatchSubcategory subcategory; std::string title; std::string text; } DispatchInfo;
 	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; } parsedXML;
 	
-	std::string joinTogether(Strvec strvec) {
-		/*
-		 * Joins the elements in a vector with plus signs, in a way it can be sent to NS API through a request
-		 * Parameters:
-		 * Strvec strvec: A vector of strings to join
-		 * Returns:
-		 * A string which results from joining all the elements with plus signs
-		 */
-		std::string returnData;
-		for (auto i : strvec) returnData += i + "+";
-		return returnData;
-	}
-	
 	class API {
 	private:
 		std::string _ua, _nation, _password, _lastcommand, _xpin = "", _localid = "", _chk = "";
@@ -273,6 +260,12 @@ namespace NSCpp {
 			Strvec paramValues;
 
 			if (type == "world") {
+				paramNames.push_back("q");
+				paramValues.push_back(shard);
+			}
+			else if (type == "wa") {
+				paramNames.push_back("wa");
+				paramValues.push_back(target);
 				paramNames.push_back("q");
 				paramValues.push_back(shard);
 			}
@@ -787,10 +780,17 @@ namespace NSCpp {
 		}
 
 	public:
-		API() { ; } // Empty object as result of default constructor :D
-
-
 		API(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser, AuthCredentials credentials = {}) {
+			/*
+			 * Class constructor, creates a new API instance
+			 * Parameters:
+			 * std::string scriptFunction: A brief explanation about what the script is for (If the string is empty, NSCpp will throw an error)
+			 * std::string scriptAuthor: A string containing the script creator's nation name (If the string is empty, NSCpp will throw an error)
+			 * std::string scriptUser: A string containing the script user's nation name (If the string is empty, NSCpp will throw an error)
+			 * AuthCredentials credentials (nation, password) (Optional): The default credentials NSCpp will try to authenticate with in case they are not provided
+			 * Returns:
+			 * Nothing (Class constructor)
+			 */
 			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) throw_err("Script function, author and user must be provided.");
 
 			this->_ua = scriptFunction + ", developed by nation=" + scriptAuthor + " and in use by nation=" + scriptUser + ", request sent using NSCpp API wrapper written by nation=jyezet.";
@@ -811,6 +811,15 @@ namespace NSCpp {
 		}
 
 		void setUserAgent(std::string scriptFunction, std::string scriptAuthor, std::string scriptUser) {
+			/*
+			 * Changes the user agent provided by NSCpp during requests
+			 * Parameters:
+			 * std::string scriptFunction: A brief explanation about what the script is for (If the string is empty, NSCpp will throw an error)
+			 * std::string scriptAuthor: A string containing the script creator's nation name (If the string is empty, NSCpp will throw an error)
+			 * std::string scriptUser: A string containing the script user's nation name (If the string is empty, NSCpp will throw an error)
+			 * Returns:
+			 * Nothing
+			 */
 			if (scriptFunction.empty() || scriptAuthor.empty() || scriptUser.empty()) throw_err("Script function, author and user must be provided.");
 
 			this->_ua = scriptFunction + ", developed by nation=" + scriptAuthor + " and in use by nation=" + scriptUser + ", request sent using NSCpp API wrapper written by nation=jyezet.";
@@ -832,7 +841,7 @@ namespace NSCpp {
 		bool auth(AuthCredentials credentials) {
 			/* Sets or updates the credentials used in requests that involve performing an action with a nation
 			 * Parameters:
-			 * AuthCredentials credentials (nation, password): A struct containing credentials used to authenticate
+			 * AuthCredentials credentials (nation, password): A struct containing credentials to authenticate with
 			 * Returns:
 			 * true if authentication was successful, otherwise it'll return false
 			 */
@@ -882,16 +891,39 @@ namespace NSCpp {
 		}
 
 		std::string getUserAgent() {
+			/*
+			 * Returns the raw user agent used by NSCpp to send requests
+			 * Parameters:
+			 * Nothing
+			 * Returns:
+			 * A string containing the raw user agent stored in the API object
+			 */
 			return this->_ua;
 		}
 
 		void setCustomUserAgent(std::string useragent) {
+			/*
+			 * Sets a completely custom user agent, with no data added by NSCpp (USE AT YOUR OWN RISK)
+			 * Parameters:
+			 * std::string useragent: The user agent to save (If it's empty, NSCpp will throw an error)
+			 * Returns:
+			 * Nothing
+			 */
 			if (useragent.empty()) throw_err("User agent must be provided.");
 
 			this->_ua = useragent;
 		}
 
 		Shard privateAPIRequest(AuthCredentials credentials, std::string shard, std::string extraParams = "") {
+			/*
+			 * Requests a private shard from the Nationstates API
+			 * Parameters:
+			 * AuthCredentials credentials (nation, password): A struct containing credentials to authenticate with
+			 * std::string shard: The shard to request (Must be a valid one, otherwise NSCpp will throw an error)
+			 * std::string extraParams (Optional): URL parameters to append at the end of the request URL, can be used to load more information about the request (Like from where to start retrieving notices)
+			 * Returns:
+			 * A Shard struct, where the response may be stored in any of the 4 fields, depending on the shard's response format
+			 */
 			std::string upperShard = this->_upper(shard);
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
 			if (!isPrivateShard) throw_err("You should you APIRequest for public shard requests, or make sure you've entered the shard's name correctly.");
@@ -940,6 +972,16 @@ namespace NSCpp {
 		}		
 
 		Shard APIRequest(std::string type, std::string shard, std::string target = "", std::string extraParams = "") {
+			/*
+			 * Requests a shard from the Nationstates API
+			 * Parameters:
+			 * std::string type: The type of request to send (WORLD/REGION/NATION/WA)
+			 * std::string shard: The shard to request (Must be a valid one, otherwise NSCpp will throw an error)
+			 * std::string target (Semi-Optional): The target of the request (Can be empty or have any value if the request type is 'WORLD', as it'll be ignored)
+			 * std::string extraParams (Optional): URL parameters to append at the end of the request URL, can be used to load more information about the request (like a census scale)
+			 * Returns:
+			 * A Shard struct, where the response may be stored in any of the 4 fields, depending on the shard's response format
+			 */
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
@@ -947,11 +989,13 @@ namespace NSCpp {
 
 			if (type.empty()) throw_err("Type must be provided.");
 
-			if (upperType != "WORLD" && target.empty()) throw_err("If request type is not world, target must be provided.");
+			if (upperType != "WORLD" && target.empty()) throw_err("If request type is not world, target must be provided (In case you're requesting a WA shard: The council is specified numerically through the target argument).");
 
 			if (extraParams.find("from") != std::string::npos && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
 
 			if ((extraParams.find("limit") != std::string::npos || extraParams.find("offset") != std::string::npos || extraParams.find("fromid") != std::string::npos) && upperShard != "CENSUS" && upperShard != "MESSAGES") throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
+
+			if (upperType == "WA" && std::distance(WAShardsAlongWithResolution, std::find(std::begin(WAShardsAlongWithResolution), std::end(WAShardsAlongWithResolution), upperShard)) != sizeof(WAShardsAlongWithResolution) / sizeof(*WAShardsAlongWithResolution)) upperType = "resolution" + upperType;
 
 			if (upperShard == "DISPATCH" && extraParams.find("dispatchid") == std::string::npos) {
 				throw_exc("To request a dispatch, you must specify a dispatchid (Pass it as the fourth argument in this form: &dispatchid=id)");
@@ -1018,6 +1062,13 @@ namespace NSCpp {
 		}
 
 		bool banject(std::string target) {
+			/*
+			 * Attempts to banject a nation from the region the user is in (Depends on the nation they authenticate as), to use this function, authenticate using auth() first
+			 * Parameters:
+			 * std::string target: The nation to banject's full name
+			 * Returns:
+			 * true if the nation has been banjected, otherwise false
+			 */
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			std::string postInfo = "nation_name=" + target + "&ban=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
@@ -1028,6 +1079,13 @@ namespace NSCpp {
 		}
 
 		bool eject(std::string target) {
+			/*
+			 * Attempts to eject a nation from the region the user is in (Depends on the nation they authenticate as), to use this function, authenticate using auth() first
+			 * Parameters:
+			 * std::string target: The nation to eject's full name
+			 * Returns:
+			 * true if the nation has been ejected, otherwise false
+			 */
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			std::string postInfo = "nation_name=" + target + "&eject=1";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
@@ -1038,6 +1096,13 @@ namespace NSCpp {
 		}
 
 		bool clearBanlist() {
+			/*
+			 * Attempts to clear the ban list of the region the user is in (Depends on the nation they authenticate as), to use this function, authenticate using auth() first
+			 * Parameters:
+			 * Nothing
+			 * Returns:
+			 * true if the ban list has been cleared, otherwise false
+			 */
 			std::string url = "https://www.nationstates.net/template-overall=none/page=region_control/";
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
@@ -1045,8 +1110,18 @@ namespace NSCpp {
 
 			return resp.find("The regional ban list has been successfully cleared") != std::string::npos;
 		}
-
+		
 		void APIDispatch(DispatchInfo info, std::string action, int dispatchID = 0) {
+			/*
+			 * Creates, edits or modifies any given dispatch, unless the user is not the dispatch's author
+			 * Parameters:
+			 * DispatchInfo info (credentials, category, subcategory, title, text): A struct containing the author's authentication credentials and the data to load into the dispatch (Everything except credentials is optional if the action is remove).  Title and text are strings, category and subcategory are scoped enumerations contained by DispatchCategory and DispatchSubcategory respectively
+			 * std::string action: Action to perform with the dispatch (Must be add, edit or remove)
+			 * int dispatchID (Semi-Optional): The dispatch's id. Necessary if the action is edit or remove.
+			 * Returns:
+			 * Nothing
+			 */
+			action = this->_lower(action);
 			if (action != "add" && action != "edit" && action != "remove") throw_err("Dispatch action must be add, edit or remove.");
 
 			if (info.credentials.nation.empty() || info.credentials.password.empty()) {
@@ -1086,6 +1161,15 @@ namespace NSCpp {
 		}
 
 		void APIRMB(AuthCredentials credentials, std::string text, std::string region) {
+			/*
+			 * Attempts to post in the RMB of a region
+			 * Parameters:
+			 * AuthCredentials credentials (nation, password): A struct containing credentials to authenticate with
+			 * std::string text: A string containing the text to post (Special characters, spaces, new lines, etc will work fine)
+			 * std::string region: The region whose RMB to post on (Will work if the nation is in the specified region or its region has an embassy with posting permissions with the target region)
+			 * Returns:
+			 * Nothing
+			 */
 			if (credentials.nation.empty() || credentials.password.empty()) {
 				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
 				credentials.nation = this->_nation;
@@ -1100,7 +1184,15 @@ namespace NSCpp {
 		}
 
 		bool APIIssue(AuthCredentials credentials, std::string issue, std::string option) {
-			// Note: Option IDs begin counting from 0
+			/*
+			 * Attempts to solve an issue in the authenticated nation
+			 * Parameters:
+			 * AuthCredentials credentials (nation, password): A struct containing credentials to authenticate with
+			 * std::string issue: The issue to solve's ID code
+			 * std::string option: The option to pick's ID (Important: Option IDs begin counting from 0)
+			 * Returns:
+			 * true if the issue was solved successfully, otherwise false
+			 */
 			if (credentials.nation.empty() || credentials.password.empty()) {
 				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
 				credentials.nation = this->_nation;
