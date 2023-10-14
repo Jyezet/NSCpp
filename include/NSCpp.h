@@ -88,7 +88,7 @@ namespace NSCpp {
 
 		std::string _waitForInput() {
 			std::cout << "\nPress any key to send the request...\n";
-			_getch();
+			int a = _getch(); // I want zero warnings :3
 			// Return userclick
 			return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 		}
@@ -114,7 +114,7 @@ namespace NSCpp {
 			std::this_thread::sleep_for(std::chrono::milliseconds((int) waitTimeSeconds * 1000));
 		}
 
-		std::string _httpget(std::string url, Strvec paramNames, Strvec paramValues, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
+		std::string _httpget(std::string url, Strvec paramNames, Strvec paramValues, std::string extraParams, curl_slist* headers, bool waitForInput = false, bool controlRatelimit = true) {
 			if (url.find("page=telegrams") != std::string::npos || url.find("page=dilemmas") != std::string::npos || url.find("page=compose_telegram") != std::string::npos || url.find("page=store") != std::string::npos || url.find("page=help") != std::string::npos) throw_err("Attempted to request one of the forbidden sites (page=telegrams, page=dilemmas, page=compose_telegram, page=store or page=help).");
 			
 			if ((waitForInput || url.find("cgi-bin") == std::string::npos) && this->_lock_requests) {
@@ -140,10 +140,12 @@ namespace NSCpp {
 				std::string currValue = curl_easy_escape(curl, paramValues[i].c_str(), 0);
 
 				// Turn all shards to lowercase, as *SOME* API shards are case sensitive (like dossier)
-				if (paramNames[i] == "&q=" || paramNames[i] == "?q=") currValue = this->_lower(currValue);
-				url += paramNames[i] + currValue;
+				if (paramNames[i] == "q") currValue = this->_lower(currValue);
+				std::string firstChar = url.find("?") == std::string::npos ? "?" : "&";
+				url += firstChar + paramNames[i] + "=" + currValue;
 			}
 
+			url += extraParams;
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); // What URL to request
 			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Allow libcurl to follow redirections
 			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false); // Disable SSL cert checking (Probably shouldn't do this but idk)
@@ -232,7 +234,7 @@ namespace NSCpp {
 				headersPrepare = curl_slist_append(headersPrepare, requestXPin.c_str());
 			}
 
-			Strvec paramNames = { "?nation=", "&c=", "&mode=" };
+			Strvec paramNames = { "nation", "c", "mode" };
 			Strvec paramValues = { credentials.nation, command, "prepare" };
 
 			for (int i = 0; i < dataNames.size(); i++) {
@@ -240,7 +242,7 @@ namespace NSCpp {
 				paramValues.push_back(dataValues[i]);
 			}
 
-			std::string respPrepare = this->_httpget(url, paramNames, paramValues, headersPrepare);
+			std::string respPrepare = this->_httpget(url, paramNames, paramValues, "", headersPrepare);
 			if (respPrepare.find("error") != std::string::npos) {
 				throw_exc("Nationstates API has thrown an unknown error.");
 				return;
@@ -258,10 +260,10 @@ namespace NSCpp {
 			headersExecute = curl_slist_append(headersExecute, requestXPin.c_str());
 
 			paramValues[2] = "execute";
-			paramNames.push_back("&token=");
+			paramNames.push_back("token");
 			paramValues.push_back(token);
 
-			std::string respExecute = this->_httpget(url, paramNames, paramValues, headersExecute);
+			std::string respExecute = this->_httpget(url, paramNames, paramValues, "", headersExecute);
 			if (respExecute.find("error") != std::string::npos) throw_exc("Nationstates API has thrown an unknown error.");
 		}
 
@@ -271,13 +273,13 @@ namespace NSCpp {
 			Strvec paramValues;
 
 			if (type == "world") {
-				paramNames.push_back("?q=");
+				paramNames.push_back("q");
 				paramValues.push_back(shard);
 			}
 			else {
-				paramNames.push_back("?" + type + "=");
+				paramNames.push_back(type);
 				paramValues.push_back(target);
-				paramNames.push_back("&q=");
+				paramNames.push_back("q");
 				paramValues.push_back(shard);
 			}
 
@@ -301,12 +303,41 @@ namespace NSCpp {
 					std::map<std::string, std::string> tempMap;
 					tempMap["TIMESTAMP"] = _event->FirstChildElement("TIMESTAMP")->GetText();
 					tempMap["TEXT"] = _event->FirstChildElement("TEXT")->GetText();
+					if (type == "WORLD") tempMap["ID"] = _event->Attribute("id");
 					mapvec.push_back(tempMap);
 				}
 				resp.respMapVec = mapvec;
 				return resp;
 			}
 
+			if (shard == "FACTIONS") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* faction = root->FirstChildElement("FACTION"); faction != NULL; faction = faction->NextSiblingElement("FACTION")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["ID"] = faction->Attribute("id");
+					tempMap["NAME"] = faction->FirstChildElement("NAME")->GetText();
+					tempMap["SCORE"] = faction->FirstChildElement("SCORE")->GetText();
+					if (faction->FirstChildElement("REGION") != NULL && faction->FirstChildElement("REGION")->GetText() != NULL) tempMap["REGION"] = faction->FirstChildElement("REGION")->GetText();
+					tempMap["NATIONS"] = faction->FirstChildElement("NATIONS")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
+			if (shard == "BANNER") {
+				Mapvec mapvec;
+				root = document.FirstChildElement(type.c_str())->FirstChildElement("BANNERS"); // Thank you again NS API
+				for (tinyxml2::XMLElement* banner = root->FirstChildElement("BANNER"); banner != NULL; banner = banner->NextSiblingElement("BANNER")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["NAME"] = banner->FirstChildElement("NAME")->GetText();
+					tempMap["VALIDITY"] = banner->FirstChildElement("VALIDITY")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+				
 			if (shard == "CENSUSRANKS") {
 				Mapvec mapvec;
 				tinyxml2::XMLElement* node = root->FirstChildElement("NATIONS");
@@ -379,6 +410,63 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "TGQUEUE") {
+				Strmap strmap;
+				strmap["MANUAL"] = root->FirstChildElement("MANUAL")->GetText();
+				strmap["MASS"] = root->FirstChildElement("MASS")->GetText();
+				strmap["API"] = root->FirstChildElement("API")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "FACTION") {
+				Strmap strmap;
+				strmap["NAME"] = root->FirstChildElement("NAME")->GetText();
+				strmap["DESC"] = root->FirstChildElement("DESC")->GetText();
+				strmap["ID"] = root->FirstChildElement("ID")->GetText();
+				strmap["FOUNDED"] = root->FirstChildElement("FOUNDED")->GetText();
+				strmap["REGION"] = root->FirstChildElement("REGION")->GetText();
+				strmap["RNAME"] = root->FirstChildElement("RNAME")->GetText();
+				strmap["ENTRY"] = root->FirstChildElement("ENTRY")->GetText();
+				strmap["SCORE"] = root->FirstChildElement("SCORE")->GetText();
+				strmap["PRODUCTION"] = root->FirstChildElement("PRODUCTION")->GetText();
+				strmap["NUKES"] = root->FirstChildElement("NUKES")->GetText();
+				strmap["SHIELD"] = root->FirstChildElement("SHIELD")->GetText();
+				strmap["TARGETS"] = root->FirstChildElement("TARGETS")->GetText();
+				strmap["LAUNCHES"] = root->FirstChildElement("LAUNCHES")->GetText();
+				strmap["INCOMING"] = root->FirstChildElement("INCOMING")->GetText();
+				strmap["TARGETED"] = root->FirstChildElement("TARGETED")->GetText();
+				strmap["STRIKES"] = root->FirstChildElement("STRIKES")->GetText();
+				strmap["RADIATION"] = root->FirstChildElement("RADIATION")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "DISPATCH") {
+				Strmap strmap;
+				strmap["ID"] = root->Attribute("id");
+				strmap["TITLE"] = root->FirstChildElement("TITLE")->GetText();
+				strmap["AUTHOR"] = root->FirstChildElement("AUTHOR")->GetText();
+				strmap["CATEGORY"] = root->FirstChildElement("CATEGORY")->GetText();
+				strmap["SUBCATEGORY"] = root->FirstChildElement("SUBCATEGORY")->GetText();
+				strmap["CREATED"] = root->FirstChildElement("CREATED")->GetText();
+				strmap["EDITED"] = root->FirstChildElement("EDITED")->GetText();
+				strmap["VIEWS"] = root->FirstChildElement("VIEWS")->GetText();
+				strmap["SCORE"] = root->FirstChildElement("SCORE")->GetText();
+				strmap["TEXT"] = root->FirstChildElement("TEXT")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "CENSUSDESC") {
+				Strmap strmap;
+				strmap["NDESC"] = root->FirstChildElement("NDESC")->GetText();
+				strmap["RDESC"] = root->FirstChildElement("RDESC")->GetText();
+				strmap["ID"] = root->Attribute("id");
+				resp.respMap = strmap;
+				return resp;
+			}
+
 			if (shard == "POLL") {
 				Strmap strmap;
 				Mapvec* options = new Mapvec();
@@ -423,16 +511,28 @@ namespace NSCpp {
 
 			if (shard == "CENSUS") {
 				Mapvec mapvec;
-				for (tinyxml2::XMLElement* scale = root->FirstChildElement("SCALE"); scale != NULL; scale = scale->NextSiblingElement("SCALE")) {
-					std::map<std::string, std::string> tempMap;
-					tempMap["ID"] = scale->Attribute("id");
-					tempMap["SCORE"] = scale->FirstChildElement("SCORE")->GetText();
-					tempMap["RANK"] = scale->FirstChildElement("RANK")->GetText();
-					if(type == "NATION") tempMap["RRANK"] = scale->FirstChildElement("RRANK")->GetText();
-					mapvec.push_back(tempMap);
+				if (type != "WORLD") {
+					for (tinyxml2::XMLElement* scale = root->FirstChildElement("SCALE"); scale != NULL; scale = scale->NextSiblingElement("SCALE")) {
+						std::map<std::string, std::string> tempMap;
+						tempMap["ID"] = scale->Attribute("id");
+						tempMap["SCORE"] = scale->FirstChildElement("SCORE")->GetText();
+						tempMap["RANK"] = scale->FirstChildElement("RANK")->GetText();
+						if(type == "NATION") tempMap["RRANK"] = scale->FirstChildElement("RRANK")->GetText();
+						mapvec.push_back(tempMap);
+					}
+					resp.respMapVec = mapvec;
+					return resp;
 				}
-				resp.respMapVec = mapvec;
-				return resp;
+				else {
+					for (tinyxml2::XMLElement* scale = root->FirstChildElement("SCALE"); scale != NULL; scale = scale->NextSiblingElement("SCALE")) {
+						std::map<std::string, std::string> tempMap;
+						tempMap["ID"] = scale->Attribute("id");
+						tempMap["SCORE"] = scale->FirstChildElement("SCORE")->GetText();
+						mapvec.push_back(tempMap);
+					}
+					resp.respMapVec = mapvec;
+					return resp;
+				}
 			}
 
 			if (shard == "NOTICES") {
@@ -524,6 +624,19 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "NEWNATIONDETAILS") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* nation = root->FirstChildElement("NEWNATION"); nation != NULL; nation = nation->NextSiblingElement("NEWNATION")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["NAME"] = nation->Attribute("name");
+					tempMap["REGION"] = nation->FirstChildElement("REGION")->GetText();
+					tempMap["FOUNDEDTIME"] = nation->FirstChildElement("FOUNDEDTIME")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
 			if (shard == "BANNERS" || shard == "ADMIRABLES" || shard == "NOTABLES") {
 				Strvec strvec;
 				std::string elementName = shard.substr(0, shard.size() - 1);
@@ -584,6 +697,20 @@ namespace NSCpp {
 			// This is getting a bit repetitive
 			if (shard == "NUMWANATIONS" && type == "REGION") {
 				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("NUMUNNATIONS")->GetText();
+				resp.response = data;
+				return resp;
+			}
+
+			// Well NS devs may have had a bad day while developing the API who knows
+			if (shard == "CENSUSNAME" && type == "WORLD") {
+				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("CENSUS")->GetText();
+				resp.response = data;
+				return resp;
+			}
+
+			// K I ran out of ideas for "funny" comments
+			if (shard == "REGIONSBYTAG" && type == "WORLD") {
+				const char* data = document.FirstChildElement(type.c_str())->FirstChildElement("REGIONS")->GetText();
 				resp.response = data;
 				return resp;
 			}
@@ -728,10 +855,10 @@ namespace NSCpp {
 			// Get localid and chk if possible
 			if (response.find("<input type=\"hidden\" name=\"chk\" value=\"") != std::string::npos) {
 				std::string tempChk;
-				int chkPosition = response.find("<input type=\"hidden\" name=\"chk\" value=\"") + strlen("<input type=\"hidden\" name=\"chk\" value=\"");
+				size_t chkPosition = response.find("<input type=\"hidden\" name=\"chk\" value=\"") + strlen("<input type=\"hidden\" name=\"chk\" value=\"");
 				
 				// If response[i] is a double quote (") it means we've reached the end of the value attribute
-				for (int i = chkPosition; response[i] != '"'; i++) {
+				for (size_t i = chkPosition; response[i] != '"'; i++) {
 					tempChk += response[i];
 				}
 
@@ -740,10 +867,10 @@ namespace NSCpp {
 
 			if (response.find("<input type=\"hidden\" name=\"localid\" value=\"") != std::string::npos) {
 				std::string tempLocalid;
-				int localidPosition = response.find("<input type=\"hidden\" name=\"localid\" value=\"") + strlen("<input type=\"hidden\" name=\"localid\" value=\"");
+				size_t localidPosition = response.find("<input type=\"hidden\" name=\"localid\" value=\"") + strlen("<input type=\"hidden\" name=\"localid\" value=\"");
 
 				// If response[i] is a double quote (") it means we've reached the end of the value attribute
-				for (int i = localidPosition; response[i] != '"'; i++) {
+				for (size_t i = localidPosition; response[i] != '"'; i++) {
 					tempLocalid += response[i];
 				}
 
@@ -764,12 +891,10 @@ namespace NSCpp {
 			this->_ua = useragent;
 		}
 
-		Shard privateAPIRequest(AuthCredentials credentials, std::string shard, Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
+		Shard privateAPIRequest(AuthCredentials credentials, std::string shard, std::string extraParams = "") {
 			std::string upperShard = this->_upper(shard);
 			bool isPrivateShard = std::distance(privateShards, std::find(std::begin(privateShards), std::end(privateShards), upperShard)) != sizeof(privateShards) / sizeof(*privateShards);
 			if (!isPrivateShard) throw_err("You should you APIRequest for public shard requests, or make sure you've entered the shard's name correctly.");
-
-			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices'.");
 
 			if (credentials.nation.empty() || credentials.password.empty()) {
 				if (this->_nation.empty() || this->_password.empty()) throw_err(authErr);
@@ -786,11 +911,9 @@ namespace NSCpp {
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str());
 			headers = curl_slist_append(headers, XPassword.c_str());
 
+			url += extraParams;
 
-			for (auto name : extraInfoNames) uri[0].push_back("&" + name + "=");
-			for (auto value : extraInfoValues) uri[1].push_back(value);
-
-			std::string response = this->_httpget(url, uri[0], uri[1], headers);
+			std::string response = this->_httpget(url, uri[0], uri[1], "", headers);
 
 			Shard data;
 			if (response.find("error") != std::string::npos) {
@@ -816,7 +939,7 @@ namespace NSCpp {
 			}
 		}		
 
-		Shard APIRequest(std::string type, std::string shard, std::string target = "", Strvec extraInfoNames = {}, Strvec extraInfoValues = {}) {
+		Shard APIRequest(std::string type, std::string shard, std::string target = "", std::string extraParams = "") {
 			std::string upperShard = this->_upper(shard);
 			std::string upperType = this->_upper(type);
 
@@ -826,11 +949,29 @@ namespace NSCpp {
 
 			if (upperType != "WORLD" && target.empty()) throw_err("If request type is not world, target must be provided.");
 
-			if (std::count(extraInfoNames.begin(), extraInfoNames.end(), "from") && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
+			if (extraParams.find("from") != std::string::npos && upperShard != "NOTICES") throw_warn("The 'from' attribute is unnecessary unless the shard is 'notices' (Use privateAPIRequest to request private shards).");
 
-			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "scale") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "mode")) && upperShard != "CENSUS" && upperShard != "CENSUSRANKS") throw_warn("The 'mode' and 'scale' attributes are unnecessary unless the shard is 'census' or 'censusranks'.");
+			if ((extraParams.find("limit") != std::string::npos || extraParams.find("offset") != std::string::npos || extraParams.find("fromid") != std::string::npos) && upperShard != "CENSUS" && upperShard != "MESSAGES") throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
 
-			if ((std::count(extraInfoNames.begin(), extraInfoNames.end(), "limit") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "offset") || std::count(extraInfoNames.begin(), extraInfoNames.end(), "fromid")) && upperShard != "CENSUS" && upperShard != "MESSAGES") throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
+			if (upperShard == "DISPATCH" && extraParams.find("dispatchid") == std::string::npos) {
+				throw_exc("To request a dispatch, you must specify a dispatchid (Pass it as the fourth argument in this form: &dispatchid=id)");
+				return Shard({});
+			}
+
+			if (upperShard == "FACTION" && extraParams.find("id") == std::string::npos) {
+				throw_exc("To request a faction, you must specify an id (Pass it as the fourth argument in this form: &id=factionid)");
+				return Shard({});
+			}
+
+			if (upperShard == "REGIONSBYTAG" && extraParams.find("tags") == std::string::npos) {
+				throw_exc("To request regions by tag, you must specify at least one tag (Pass it as the fourth argument in this form: &tags=tag1,tag2,-tag3,etc)");
+				return Shard({});
+			}
+
+			if (upperShard == "POLL" && upperType == "WORLD" && extraParams.find("pollid") == std::string::npos) {
+				throw_exc("To request a poll, you must specify its id (Pass it as the fourth argument in this form: &pollid=id)");
+				return Shard({});
+			}
 
 			if (upperType == "NATION" && std::distance(validNationShards, std::find(std::begin(validNationShards), std::end(validNationShards), upperShard)) == sizeof(validNationShards) / sizeof(*validNationShards)) throw_err("'" + shard + "' is not a valid shard for type nation.");
 
@@ -849,21 +990,13 @@ namespace NSCpp {
 			std::string requestUserAgent = "User-Agent: " + this->_ua;
 			curl_slist* headers = curl_slist_append(NULL, requestUserAgent.c_str()); // Append the User-Agent header to the linked list (libcurl only allows linked lists to be passed as request headers)
 			
-			for (auto name : extraInfoNames) uri[0].push_back("&" + name + "=");
-
-			for (auto value : extraInfoValues) uri[1].push_back(value);
-
-			std::string response = this->_httpget(url, uri[0], uri[1], headers);
+			std::string response = this->_httpget(url, uri[0], uri[1], extraParams, headers);
 			
 			Shard data;
-			if (response.find("error") != std::string::npos) {
-				throw_exc("Nationstates API has thrown an unknown error.");
-				return data;
-			}
  			data.shard = upperShard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS") {
+			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS" || upperShard == "BANNER" || upperShard == "FACTIONS" || upperShard == "NEWNATIONDETAILS") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
@@ -873,7 +1006,7 @@ namespace NSCpp {
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL") {
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL" || upperShard == "CENSUSDESC" || upperShard == "DISPATCH" || upperShard == "FACTION" || upperShard == "TGQUEUE") {
 				parsedXML xml = this->_parseXML(response, upperType, upperShard);
 				data.respMap = xml.respMap;
 				if (upperShard == "POLL") data.optionsPtr = xml.optionsPtr;
