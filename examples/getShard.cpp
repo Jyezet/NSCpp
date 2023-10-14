@@ -25,14 +25,8 @@ int main() {
 		cout << "Score: " << censusScale["SCORE"] << "\nWorld rank: " << censusScale["RANK"] << "\nRegion rank: " << censusScale["RRANK"] <<"\n\n";
 	}
 
-	// Note: You can also request multiple scales at once through this half-assed function (It seems like I'm terrible at upscaling a project)
-	string blackMarket = to_string((int)NSCpp::censusTypes::BlackMarket); // Convert scale to string using to_string method in string header (Cast it to int first)
-	string averageDisposableIncome = to_string((int)NSCpp::censusTypes::AverageDisposableIncome); // Same
-	Strvec vectorWithAllScalesConvertedToString = {blackMarket, averageDisposableIncome} // Wow what a long variable name
-	std::string allScalesJoinedTogether = NSCpp::joinTogether(vectorWithAllScalesConvertedToString); // Pretty self-explanatory
-
-	// It may seem weird that we are converting a vector to string and then putting it in a vector, but actually, the vector below is there to hold more than one parameter
-	NSCpp::Shard response2 = api.APIRequest("nation", "census", "coolnation", Strvec({ "scale" }), Strvec({ allScalesJoinedTogether }));
+	// You can pass additional arguments to the request URL this way
+	NSCpp::Shard response2 = api.APIRequest("nation", "census", "coolnation", "&scale=45");
 
 	// Print everything again
 	NSCpp::Mapvec vectorOfMaps = response2.respMapVec;
