@@ -48,10 +48,10 @@ namespace NSCpp {
 	typedef std::vector<std::string> Strvec;
 	typedef std::vector<std::map<std::string, std::string>> Mapvec;
 	typedef std::map<std::string, std::string> Strmap;
-	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; Mapvec* optionsPtr; Strvec* votersForPtr; Strvec* votersAgainstPtr; } Shard;
+	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; Mapvec* optionsPtr; } Shard;
 	typedef struct { std::string nation; std::string password; } AuthCredentials;
 	typedef struct { AuthCredentials credentials; DispatchCategory category; DispatchSubcategory subcategory; std::string title; std::string text; } DispatchInfo;
-	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; Strvec* votersForPtr; Strvec* votersAgainstPtr; } parsedXML;
+	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; } parsedXML;
 	
 	class API {
 	private:
