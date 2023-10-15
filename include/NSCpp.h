@@ -48,10 +48,10 @@ namespace NSCpp {
 	typedef std::vector<std::string> Strvec;
 	typedef std::vector<std::map<std::string, std::string>> Mapvec;
 	typedef std::map<std::string, std::string> Strmap;
-	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; Mapvec* optionsPtr; } Shard;
+	typedef struct { std::string target; std::string shard; std::string response; Mapvec respMapVec; Strvec respVec; Strmap respMap; Mapvec* optionsPtr; Strvec* votersForPtr; Strvec* votersAgainstPtr; } Shard;
 	typedef struct { std::string nation; std::string password; } AuthCredentials;
 	typedef struct { AuthCredentials credentials; DispatchCategory category; DispatchSubcategory subcategory; std::string title; std::string text; } DispatchInfo;
-	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; } parsedXML;
+	typedef struct { std::string response; Mapvec respMapVec; Strvec respVec; std::map<std::string, std::string> respMap; Mapvec* optionsPtr; Strvec* votersForPtr; Strvec* votersAgainstPtr; } parsedXML;
 	
 	class API {
 	private:
@@ -75,7 +75,7 @@ namespace NSCpp {
 
 		std::string _waitForInput() {
 			std::cout << "\nPress any key to send the request...\n";
-			int a = _getch(); // I want zero warnings :3
+			(void) _getch(); // Apparently, casting functions to void to indicate you don't care about the return value is an important coding convention
 			// Return userclick
 			return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 		}
@@ -303,6 +303,24 @@ namespace NSCpp {
 				return resp;
 			}
 
+			if (shard == "PROPOSALS") {
+				Mapvec mapvec;
+				for (tinyxml2::XMLElement* proposal = root->FirstChildElement("PROPOSAL"); proposal != NULL; proposal = proposal->NextSiblingElement("PROPOSAL")) {
+					std::map<std::string, std::string> tempMap;
+					tempMap["ID"] = proposal->FirstChildElement("ID")->GetText();
+					tempMap["CATEGORY"] = proposal->FirstChildElement("CATEGORY")->GetText();
+					tempMap["CREATED"] = proposal->FirstChildElement("CREATED")->GetText();
+					tempMap["DESC"] = proposal->FirstChildElement("DESC")->GetText();
+					tempMap["NAME"] = proposal->FirstChildElement("NAME")->GetText();
+					tempMap["OPTION"] = proposal->FirstChildElement("OPTION")->GetText();
+					tempMap["PROPOSED_BY"] = proposal->FirstChildElement("PROPOSED_BY")->GetText();
+					if (proposal->FirstChildElement("APPROVALS") != NULL && proposal->FirstChildElement("APPROVALS")->GetText() != NULL) tempMap["APPROVALS"] = proposal->FirstChildElement("APPROVALS")->GetText();
+					mapvec.push_back(tempMap);
+				}
+				resp.respMapVec = mapvec;
+				return resp;
+			}
+
 			if (shard == "FACTIONS") {
 				Mapvec mapvec;
 				for (tinyxml2::XMLElement* faction = root->FirstChildElement("FACTION"); faction != NULL; faction = faction->NextSiblingElement("FACTION")) {
@@ -399,6 +417,24 @@ namespace NSCpp {
 				strmap["RMB"] = root->FirstChildElement("RMB")->GetText();
 				strmap["WA"] = root->FirstChildElement("WA")->GetText();
 				strmap["NEWS"] = root->FirstChildElement("NEWS")->GetText();
+				resp.respMap = strmap;
+				return resp;
+			}
+
+			if (shard == "RESOLUTION") {
+				Strmap strmap;
+				strmap["CATEGORY"] = root->FirstChildElement("CATEGORY")->GetText();
+				strmap["CREATED"] = root->FirstChildElement("CREATED")->GetText();
+				strmap["DESC"] = root->FirstChildElement("DESC")->GetText();
+				strmap["ID"] = root->FirstChildElement("ID")->GetText();
+				strmap["NAME"] = root->FirstChildElement("NAME")->GetText();
+				strmap["OPTION"] = root->FirstChildElement("OPTION")->GetText();
+				strmap["PROMOTED"] = root->FirstChildElement("PROMOTED")->GetText();
+				strmap["PROPOSED_BY"] = root->FirstChildElement("PROPOSED_BY")->GetText();
+				strmap["TOTAL_NATIONS_AGAINST"] = root->FirstChildElement("TOTAL_NATIONS_AGAINST")->GetText();
+				strmap["TOTAL_NATIONS_FOR"] = root->FirstChildElement("TOTAL_NATIONS_FOR")->GetText();
+				strmap["TOTAL_VOTES_AGAINST"] = root->FirstChildElement("TOTAL_VOTES_AGAINST")->GetText();
+				strmap["TOTAL_VOTES_FOR"] = root->FirstChildElement("TOTAL_VOTES_FOR")->GetText();
 				resp.respMap = strmap;
 				return resp;
 			}
@@ -975,7 +1011,7 @@ namespace NSCpp {
 			/*
 			 * Requests a shard from the Nationstates API
 			 * Parameters:
-			 * std::string type: The type of request to send (WORLD/REGION/NATION/WA)
+			 * std::string type: The type of request to send (WORLD/REGION/NATION/WA, if it's WA, specify the targeted council through the target parameter, 1 for GA and 2 for SC)
 			 * std::string shard: The shard to request (Must be a valid one, otherwise NSCpp will throw an error)
 			 * std::string target (Semi-Optional): The target of the request (Can be empty or have any value if the request type is 'WORLD', as it'll be ignored)
 			 * std::string extraParams (Optional): URL parameters to append at the end of the request URL, can be used to load more information about the request (like a census scale)
@@ -995,7 +1031,7 @@ namespace NSCpp {
 
 			if ((extraParams.find("limit") != std::string::npos || extraParams.find("offset") != std::string::npos || extraParams.find("fromid") != std::string::npos) && upperShard != "CENSUS" && upperShard != "MESSAGES") throw_warn("The 'limit', 'offset' and 'fromid' attributes are unnecessary unless the shard is 'messages'.");
 
-			if (upperType == "WA" && std::distance(WAShardsAlongWithResolution, std::find(std::begin(WAShardsAlongWithResolution), std::end(WAShardsAlongWithResolution), upperShard)) != sizeof(WAShardsAlongWithResolution) / sizeof(*WAShardsAlongWithResolution)) upperType = "resolution" + upperType;
+			if (upperType == "WA" && target != "1" && target != "2") throw_err("If request type is WA, target must be 1 (General Assembly) or 2 (Security Council).");
 
 			if (upperShard == "DISPATCH" && extraParams.find("dispatchid") == std::string::npos) {
 				throw_exc("To request a dispatch, you must specify a dispatchid (Pass it as the fourth argument in this form: &dispatchid=id)");
@@ -1040,7 +1076,8 @@ namespace NSCpp {
  			data.shard = upperShard;
 			data.target = target;
 
-			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS" || upperShard == "BANNER" || upperShard == "FACTIONS" || upperShard == "NEWNATIONDETAILS") {
+			// I did what I had to do, okay?!?!
+			if (upperShard == "HAPPENINGS" || upperShard == "HISTORY" || upperShard == "DISPATCHLIST" || upperShard == "WABADGES" || upperShard == "CENSUS" || upperShard == "POLICIES" || upperShard == "OFFICERS" || upperShard == "MESSAGES" || upperShard == "CENSUSRANKS" || upperShard == "BANNER" || upperShard == "FACTIONS" || upperShard == "NEWNATIONDETAILS" || upperShard == "PROPOSALS") {
 				data.respMapVec = this->_parseXML(response, upperType, upperShard).respMapVec;
 				return data;
 			}
@@ -1050,7 +1087,7 @@ namespace NSCpp {
 				return data;
 			}
 
-			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL" || upperShard == "CENSUSDESC" || upperShard == "DISPATCH" || upperShard == "FACTION" || upperShard == "TGQUEUE") {
+			if (upperShard == "DEATHS" || upperShard == "ZOMBIE" || upperShard == "FREEDOM" || upperShard == "GOVT" || upperShard == "SECTORS" || upperShard == "GAVOTE" || upperShard == "POLL" || upperShard == "CENSUSDESC" || upperShard == "DISPATCH" || upperShard == "FACTION" || upperShard == "TGQUEUE" || upperShard == "RESOLUTION") {
 				parsedXML xml = this->_parseXML(response, upperType, upperShard);
 				data.respMap = xml.respMap;
 				if (upperShard == "POLL") data.optionsPtr = xml.optionsPtr;

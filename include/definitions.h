@@ -137,7 +137,7 @@ namespace NSCpp {
 	const std::string validWorldShards[] = { "BANNER", "CENSUS", "CENSUSID", "CENSUSDESC", "CENSUSNAME", "CENSUSRANKS", "CENSUSSCALE", "CENSUSTITLE", "DISPATCH", "DISPATCHLIST", "FACTION", "FACTIONS", "FEATUREDREGION", "HAPPENINGS", "LASTEVENTID", "NATIONS", "NEWNATIONS", "NEWNATIONDETAILS", "NUMNATIONS", "NUMREGIONS", "POLL", "REGIONS", "REGIONSBYTAG", "TGQUEUE" };
 	const std::string validWAShards[] = { "NUMNATIONS", "NUMDELEGATES", "DELEGATES", "MEMBERS", "HAPPENINGS", "PROPOSALS", "RESOLUTION", "VOTERS", "VOTETRACK", "DELLOG", "DELVOTES", "LASTRESOLUTION" };
 	const std::string privateShards[] = { "DOSSIER", "ISSUES", "ISSUESUMMARY", "NEXTISSUE", "NEXTISSUETIME", "NOTICES", "PACKS", "PING", "RDOSSIER", "UNREAD" };
-
+	
 	const std::string authErr = "Please supply valid credentials.";
 
 	// Ignore this class, it's for benchmarking (Code rightfully stolen from https://www.youtube.com/watch?v=YG4jexlSAjc)
